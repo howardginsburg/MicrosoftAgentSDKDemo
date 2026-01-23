@@ -17,6 +17,9 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Microsoft Agent Framework (Preview) -->
+    <PackageReference Include="Microsoft.Agents.AI" Version="1.0.0-preview.260121.1" />
+    
     <!-- Microsoft Agents Framework Storage -->
     <PackageReference Include="Microsoft.Agents.Storage.CosmosDb" Version="1.0.1" />
     

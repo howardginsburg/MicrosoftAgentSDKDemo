@@ -17,28 +17,28 @@ var host = Host.CreateDefaultBuilder(args)
     {
         // Configure Application Insights
         var instrumentationKey = context.Configuration["ApplicationInsights:InstrumentationKey"];
-        
         services.AddLogging(builder =>
         {
             builder.AddApplicationInsights(instrumentationKey);
         });
 
-        // Register framework-aware services
+        // Register Agent Framework and persistence services
         services.AddSingleton<IThreadManager, ThreadManager>();
-        services.AddSingleton<IChatAgent, ChatAgent>();
+        services.AddSingleton<IAgentFactory, ChatAgentFactory>();
+        services.AddSingleton<ThreadTools>();
+        services.AddSingleton<IConsoleUI, ConsoleUI>();
     })
     .Build();
 
 var logger = host.Services.GetRequiredService<ILogger<Program>>();
-var chatAgent = host.Services.GetRequiredService<IChatAgent>();
+var consoleUI = host.Services.GetRequiredService<IConsoleUI>();
 var threadManager = host.Services.GetRequiredService<IThreadManager>();
+var agentFactory = host.Services.GetRequiredService<IAgentFactory>();
 
-logger.LogInformation("Application started");
+logger.LogInformation("Application started | Framework: Microsoft Agent Framework");
 
-// Prompt for username
-Console.Write("Enter your username: ");
-var username = Console.ReadLine() ?? "User";
-
+// Get username
+var username = await consoleUI.GetUsernameAsync();
 var sessionStart = DateTime.UtcNow;
 logger.LogInformation("Session started | UserId: {UserId}", username);
 
@@ -49,118 +49,91 @@ while (!shouldExit)
     string? currentThreadId = null;
     string? currentThreadName = null;
 
-    // Get user threads and display selection
     try
     {
+        // Get user threads and display selection menu
         var userThreads = await threadManager.GetUserThreadsAsync(username, limit: 10);
-        
-        Console.WriteLine("\nSelect a thread:");
-        Console.WriteLine("  1. [NEW] - Start a new conversation");
-        
-        for (int i = 0; i < userThreads.Count; i++)
+        var selection = await consoleUI.GetThreadSelectionAsync(userThreads, username);
+
+        if (selection.Type == ThreadSelectionType.Exit)
         {
-            Console.WriteLine($"  {i + 2}. {userThreads[i].ThreadName}");
+            consoleUI.DisplayGoodbye();
+            var sessionDuration = DateTime.UtcNow - sessionStart;
+            logger.LogInformation("Session ended | UserId: {UserId} | Duration: {DurationMs}ms", username, sessionDuration.TotalMilliseconds);
+            shouldExit = true;
+            continue;
         }
-        
-        Console.WriteLine($"  {userThreads.Count + 2}. [QUIT] - Exit the application");
-        
-        Console.Write("\nEnter thread number: ");
-        var selection = Console.ReadLine() ?? string.Empty;
-        
-        if (int.TryParse(selection, out var index))
+
+        if (selection.Type == ThreadSelectionType.New && !string.IsNullOrWhiteSpace(selection.FirstMessage))
         {
-            if (index == 1)
-            {
-                // Start new thread
-                Console.Write("First message: ");
-                var firstMessage = Console.ReadLine() ?? string.Empty;
-                
-                if (!string.IsNullOrWhiteSpace(firstMessage))
-                {
-                    currentThreadId = await threadManager.CreateThreadAsync(username, firstMessage);
-                    var thread = await threadManager.GetThreadAsync(username, currentThreadId);
-                    currentThreadName = thread?.ThreadName ?? "New Thread";
-                    
-                    Console.WriteLine($"\nCreated new thread: {currentThreadName} (ID: {currentThreadId})\n");
-                    
-                    // Send first message and get response
-                    var response = await chatAgent.ChatAsync(username, currentThreadId, firstMessage);
-                    Console.WriteLine($"Agent: {response}\n");
-                }
-            }
-            else if (index > 1 && index < userThreads.Count + 2)
-            {
-                // Load existing thread
-                var selectedThread = userThreads[index - 2];
-                currentThreadId = selectedThread.Id;
-                currentThreadName = selectedThread.ThreadName;
-                logger.LogInformation("Thread switched | UserId: {UserId} | ThreadId: {ThreadId} | ThreadName: {ThreadName}", username, currentThreadId, currentThreadName);
-                Console.WriteLine($"\nLoaded thread: {currentThreadName}\n");
-                
-                // Display thread history
-                if (selectedThread.Messages.Count > 0)
-                {
-                    Console.WriteLine("--- Conversation History ---");
-                    foreach (var msg in selectedThread.Messages)
-                    {
-                        if (msg.Role == "user")
-                        {
-                            Console.WriteLine($"{username}: {msg.Content}");
-                        }
-                        else if (msg.Role == "assistant")
-                        {
-                            Console.WriteLine($"Agent: {msg.Content}");
-                        }
-                    }
-                    Console.WriteLine("--- End of History ---\n");
-                }
-            }
-            else if (index == userThreads.Count + 2)
-            {
-                // Exit application
-                Console.WriteLine("Goodbye!");
-                var sessionDuration = DateTime.UtcNow - sessionStart;
-                logger.LogInformation("Session ended | UserId: {UserId} | Duration: {DurationMs}ms", username, sessionDuration.TotalMilliseconds);
-                shouldExit = true;
-                continue;
-            }
+            // Create new thread
+            currentThreadId = await threadManager.CreateThreadAsync(username, selection.FirstMessage);
+            var thread = await threadManager.GetThreadAsync(username, currentThreadId);
+            currentThreadName = thread?.ThreadName ?? "New Thread";
+            
+            consoleUI.DisplayThreadCreated(currentThreadName, currentThreadId);
+
+            // Create agent for this session
+            var agent = await agentFactory.CreateAgentAsync(username);
+            
+            // Send first message through the agent
+            var threadKey = $"{username}|{currentThreadId}";
+            var response = await agent.ProcessMessageAsync(threadKey, selection.FirstMessage);
+            
+            consoleUI.DisplayAgentResponse(response);
         }
-        
+        else if (selection.Type == ThreadSelectionType.Existing && selection.Thread != null)
+        {
+            // Load existing thread
+            currentThreadId = selection.Thread.Id;
+            currentThreadName = selection.Thread.ThreadName;
+            
+            logger.LogInformation("Thread switched | UserId: {UserId} | ThreadId: {ThreadId} | ThreadName: {ThreadName}", 
+                username, currentThreadId, currentThreadName);
+            consoleUI.DisplayThreadLoaded(currentThreadName);
+            consoleUI.DisplayConversationHistory(username, selection.Thread.Messages);
+        }
+
         // Chat loop for selected thread
-        while (currentThreadId != null)
+        if (currentThreadId != null)
         {
-            Console.WriteLine();
-            var prompt = $"{username} [{currentThreadName}]> ";
-            Console.Write(prompt);
-
-            var input = Console.ReadLine() ?? string.Empty;
-
-            if (string.IsNullOrWhiteSpace(input))
-                continue;
-
-            if (input.Equals("quit", StringComparison.OrdinalIgnoreCase))
+            var agent = await agentFactory.CreateAgentAsync(username);
+            var threadKey = $"{username}|{currentThreadId}";
+            
+            while (true)
             {
-                // Return to thread selection
-                break;
-            }
+                var input = await consoleUI.GetChatInputAsync(username, currentThreadName ?? "");
 
-            // Send message to current thread
-            try
-            {
-                var response = await chatAgent.ChatAsync(username, currentThreadId, input);
-                Console.WriteLine($"\nAgent: {response}\n");
-            }
-            catch (Exception ex)
-            {
-                logger.LogError(ex, "Error sending message");
-                Console.WriteLine($"Error: {ex.Message}");
+                if (string.IsNullOrWhiteSpace(input))
+                    continue;
+
+                if (input.Equals("quit", StringComparison.OrdinalIgnoreCase))
+                {
+                    // Return to thread selection menu
+                    break;
+                }
+
+                try
+                {
+                    logger.LogDebug("Processing message | UserId: {UserId} | ThreadId: {ThreadId}", username, currentThreadId);
+                    
+                    // Send message through the agent
+                    var response = await agent.ProcessMessageAsync(threadKey, input);
+                    
+                    consoleUI.DisplayAgentResponse(response);
+                }
+                catch (Exception ex)
+                {
+                    logger.LogError(ex, "Error processing message");
+                    consoleUI.DisplayError(ex.Message);
+                }
             }
         }
     }
     catch (Exception ex)
     {
-        logger.LogError(ex, "Error in thread selection");
-        Console.WriteLine($"Error: {ex.Message}");
+        logger.LogError(ex, "Error in main loop");
+        consoleUI.DisplayError(ex.Message);
     }
 }
 
