@@ -1,41 +1,24 @@
 using Microsoft.Agents.AI;
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
-using System.ComponentModel;
+using ModelContextProtocol.Client;
 
 namespace MicrosoftAgentSDKDemo.Services;
 
 /// <summary>
-/// Represents a tool definition that the AI agent can use.
-/// Wraps a delegate function with metadata for agent discovery.
-/// </summary>
-public class AITool
-{
-    public Delegate Function { get; set; }
-    public string Name { get; set; }
-
-    public AITool(Delegate function, string name)
-    {
-        Function = function;
-        Name = name;
-    }
-}
-
-/// <summary>
-/// Provides integration with Microsoft Learn documentation.
-/// Acts as a bridge to search and retrieve Microsoft Learn content for agent use.
+/// Manages MCP client connections and provides tools from MCP servers.
+/// Uses the official Model Context Protocol C# SDK.
 /// </summary>
 public interface IMCPServerManager
 {
-    /// <summary>
-    /// Gets AITool instances for Microsoft Learn documentation access.
-    /// These tools can be used by agents via the AsAIAgent() pattern.
-    /// </summary>
     Task<IList<AITool>> GetMicrosoftLearnToolsAsync();
+    Task DisposeAsync();
 }
 
 public class MCPServerManager : IMCPServerManager
 {
     private readonly ILogger<MCPServerManager> _logger;
+    private IMcpClient? _mcpClient;
 
     public MCPServerManager(ILogger<MCPServerManager> logger)
     {
@@ -43,86 +26,46 @@ public class MCPServerManager : IMCPServerManager
     }
 
     /// <summary>
-    /// Provides AITool instances for Microsoft Learn documentation search and retrieval.
+    /// Connects to Microsoft Docs MCP server and retrieves available tools.
     /// </summary>
     public async Task<IList<AITool>> GetMicrosoftLearnToolsAsync()
     {
         try
         {
-            var tools = new List<AITool>
+            // Create MCP client connecting to Microsoft Docs HTTP server
+            var transport = new SseClientTransport(new SseClientTransportOptions
             {
-                new AITool(SearchMicrosoftLearn, nameof(SearchMicrosoftLearn)),
-                new AITool(GetDocumentation, nameof(GetDocumentation)),
-                new AITool(SearchAzureDocumentation, nameof(SearchAzureDocumentation))
-            };
+                Endpoint = new Uri("https://learn.microsoft.com/api/mcp"),
+                Name = "MicrosoftDocsServer"
+            });
 
-            _logger.LogInformation("Created {ToolCount} Microsoft Learn tools for agent", tools.Count);
-            return await Task.FromResult(tools);
+            _mcpClient = await McpClientFactory.CreateAsync(transport);
+
+            _logger.LogInformation("Connected to Microsoft Docs MCP server at https://learn.microsoft.com/api/mcp");
+
+            // Retrieve the list of tools from the MCP server
+            var mcpTools = await _mcpClient.ListToolsAsync();
+            
+            _logger.LogInformation("Retrieved {ToolCount} tools from MCP server: {ToolNames}", 
+                mcpTools.Count(), string.Join(", ", mcpTools.Select(t => t.Name)));
+
+            // McpClientTool extends AIFunction which implements AITool
+            return mcpTools.ToList<AITool>();
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to create Microsoft Learn tools");
-            throw;
+            _logger.LogError(ex, "Failed to connect to Microsoft Docs MCP server");
+            // Return empty list if connection fails
+            return new List<AITool>();
         }
     }
 
-    private string SearchMicrosoftLearn(
-        [Description("The search query or topic to search for")] string query)
+    public async Task DisposeAsync()
     {
-        _logger.LogInformation("MCP Tool Invoked: SearchMicrosoftLearn | Query: {Query}", query);
-        try
+        if (_mcpClient != null)
         {
-            // In a production implementation, this would call the Microsoft Learn API
-            // For now, return a placeholder indicating the agent would search Learn
-            var result = $"Searching Microsoft Learn for: {query}\n(In production, this would query learn.microsoft.com)";
-            _logger.LogDebug("SearchMicrosoftLearn completed successfully");
-            return result;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "SearchMicrosoftLearn failed");
-            throw;
-        }
-    }
-
-    private string GetDocumentation(
-        [Description("The specific documentation topic or URL path")] string topic,
-        [Description("Optional query parameters for filtering")] string? filter = null)
-    {
-        _logger.LogInformation("MCP Tool Invoked: GetDocumentation | Topic: {Topic} | Filter: {Filter}", topic, filter ?? "(none)");
-        try
-        {
-            // In a production implementation, this would fetch actual documentation
-            var filterInfo = !string.IsNullOrEmpty(filter) ? $" with filter: {filter}" : "";
-            var result = $"Retrieving Microsoft Learn documentation for: {topic}{filterInfo}\n(In production, this would fetch from learn.microsoft.com)";
-            _logger.LogDebug("GetDocumentation completed successfully");
-            return result;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "GetDocumentation failed");
-            throw;
-        }
-    }
-
-    private string SearchAzureDocumentation(
-        [Description("The Azure service or topic to search for")] string service,
-        [Description("Optional documentation category (e.g., 'tutorial', 'reference', 'how-to')")] string? category = null)
-    {
-        _logger.LogInformation("MCP Tool Invoked: SearchAzureDocumentation | Service: {Service} | Category: {Category}", 
-            service, category ?? "(none)");
-        try
-        {
-            // In a production implementation, this would call Azure documentation APIs
-            var categoryInfo = !string.IsNullOrEmpty(category) ? $" in {category} category" : "";
-            var result = $"Searching Azure documentation for: {service}{categoryInfo}\n(In production, this would query Azure Learn resources)";
-            _logger.LogDebug("SearchAzureDocumentation completed successfully");
-            return result;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "SearchAzureDocumentation failed");
-            throw;
+            await _mcpClient.DisposeAsync();
+            _logger.LogInformation("Disposed MCP client");
         }
     }
 }

@@ -3,6 +3,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Agents.AI;
 using MicrosoftAgentSDKDemo.Services;
 
 var host = Host.CreateDefaultBuilder(args)
@@ -15,13 +16,6 @@ var host = Host.CreateDefaultBuilder(args)
     })
     .ConfigureServices((context, services) =>
     {
-        // Configure Application Insights
-        var instrumentationKey = context.Configuration["ApplicationInsights:InstrumentationKey"];
-        services.AddLogging(builder =>
-        {
-            builder.AddApplicationInsights(instrumentationKey);
-        });
-
         // Register Agent Framework and persistence services
         services.AddSingleton<IThreadManager, ThreadManager>();
         services.AddSingleton<IMCPServerManager, MCPServerManager>();
@@ -74,14 +68,15 @@ while (!shouldExit)
             
             consoleUI.DisplayThreadCreated(currentThreadName, currentThreadId);
 
-            // Create agent for this session
+            // Create agent for this user
             var agent = await agentFactory.CreateAgentAsync(username);
             
             // Send first message through the agent
-            var threadKey = $"{username}|{currentThreadId}";
-            var response = await agent.ProcessMessageAsync(threadKey, selection.FirstMessage);
+            await threadManager.SaveMessageAsync(username, currentThreadId, "user", selection.FirstMessage);
+            var agentResponse = await agent.RunAsync(selection.FirstMessage);
+            await threadManager.SaveMessageAsync(username, currentThreadId, "assistant", agentResponse.Text);
             
-            consoleUI.DisplayAgentResponse(response);
+            consoleUI.DisplayAgentResponse(agentResponse.Text);
         }
         else if (selection.Type == ThreadSelectionType.Existing && selection.Thread != null)
         {
@@ -99,7 +94,6 @@ while (!shouldExit)
         if (currentThreadId != null)
         {
             var agent = await agentFactory.CreateAgentAsync(username);
-            var threadKey = $"{username}|{currentThreadId}";
             
             while (true)
             {
@@ -118,10 +112,16 @@ while (!shouldExit)
                 {
                     logger.LogDebug("Processing message | UserId: {UserId} | ThreadId: {ThreadId}", username, currentThreadId);
                     
-                    // Send message through the agent
-                    var response = await agent.ProcessMessageAsync(threadKey, input);
+                    // Save user message to thread
+                    await threadManager.SaveMessageAsync(username, currentThreadId, "user", input);
                     
-                    consoleUI.DisplayAgentResponse(response);
+                    // Send message through agent - framework will handle tool calls automatically
+                    var agentResponse = await agent.RunAsync(input);
+                    
+                    // Save assistant response to thread
+                    await threadManager.SaveMessageAsync(username, currentThreadId, "assistant", agentResponse.Text);
+                    
+                    consoleUI.DisplayAgentResponse(agentResponse.Text);
                 }
                 catch (Exception ex)
                 {

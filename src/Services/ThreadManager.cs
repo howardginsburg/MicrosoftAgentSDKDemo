@@ -120,8 +120,6 @@ public class ThreadManager : IThreadManager
         }
     }
 
-
-
     public async Task SaveMessageAsync(string userId, string threadId, string role, string content)
     {
         try
