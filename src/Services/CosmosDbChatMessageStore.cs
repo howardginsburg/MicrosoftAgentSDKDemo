@@ -15,6 +15,7 @@ internal sealed class CosmosDbChatMessageStore : ChatMessageStore
 {
     private readonly IStorage _storage;
     private readonly ILogger<CosmosDbChatMessageStore> _logger;
+    private readonly string _userId;
     
     // JsonSerializerOptions configured for proper ChatMessage serialization
     private static readonly JsonSerializerOptions s_jsonOptions = new()
@@ -30,11 +31,13 @@ internal sealed class CosmosDbChatMessageStore : ChatMessageStore
 
     public CosmosDbChatMessageStore(
         IStorage storage,
+        string userId,
         JsonElement serializedStoreState,
         ILogger<CosmosDbChatMessageStore> logger,
         JsonSerializerOptions? jsonSerializerOptions = null)
     {
         _storage = storage ?? throw new ArgumentNullException(nameof(storage));
+        _userId = userId ?? throw new ArgumentNullException(nameof(userId));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
         // Deserialize the thread DB key if we're restoring from a saved state
@@ -215,6 +218,7 @@ internal sealed class CosmosDbChatMessageStore : ChatMessageStore
             var documentToStore = new Dictionary<string, object>
             {
                 ["id"] = ThreadDbKey,
+                ["userId"] = _userId,
                 ["messages"] = JsonSerializer.SerializeToElement(existingMessages, s_jsonOptions),
                 ["lastUpdated"] = DateTimeOffset.UtcNow
             };

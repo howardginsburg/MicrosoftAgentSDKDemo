@@ -79,6 +79,7 @@ public class ChatAgentFactory : IAgentFactory
                 ChatMessageStoreFactory = (ctx, ct) => new ValueTask<ChatMessageStore>(
                     new CosmosDbChatMessageStore(
                         _storage,
+                        userId,
                         ctx.SerializedState,
                         _loggerFactory.CreateLogger<CosmosDbChatMessageStore>(),
                         ctx.JsonSerializerOptions))

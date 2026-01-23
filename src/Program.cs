@@ -90,7 +90,8 @@ while (!shouldExit)
             thread = await agent.GetNewThreadAsync();
             threadId = Guid.NewGuid().ToString();
             
-            // Save thread and add to user index with the first message as title
+            // Set current user and save thread and add to user index with the first message as title
+            threadStore.SetCurrentUserId(username);
             await threadStore.SaveThreadAsync(agent, threadId, thread);
             await threadStore.AddThreadToUserIndexAsync(username, threadId, selection.FirstMessage);
             
@@ -107,6 +108,7 @@ while (!shouldExit)
             
             try
             {
+                threadStore.SetCurrentUserId(username);
                 thread = await threadStore.GetThreadAsync(agent, threadId);
                 consoleUI.DisplayThreadLoaded(threadId);
             }

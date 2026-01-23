@@ -17,6 +17,7 @@ public class CosmosDbAgentThreadStore : AgentThreadStore
 {
     private readonly IStorage _storage;
     private readonly ILogger<CosmosDbAgentThreadStore> _logger;
+    private string? _currentUserId;
 
     public CosmosDbAgentThreadStore(
         IStorage storage,
@@ -26,6 +27,8 @@ public class CosmosDbAgentThreadStore : AgentThreadStore
         _logger = logger;
     }
 
+    public void SetCurrentUserId(string userId) => _currentUserId = userId;
+
     public override async ValueTask SaveThreadAsync(
         AIAgent agent,
         string threadId,
@@ -34,13 +37,17 @@ public class CosmosDbAgentThreadStore : AgentThreadStore
     {
         try
         {
+            if (string.IsNullOrEmpty(_currentUserId))
+                throw new InvalidOperationException("UserId must be set before saving thread. Call SetCurrentUserId first.");
+                
             var json = thread.Serialize();
             var key = GetThreadKey(threadId);
             
-            // Create a wrapper object with id for Cosmos DB
+            // Create a wrapper object with id and userId for Cosmos DB
             var document = new Dictionary<string, object>
             {
                 { "id", key },
+                { "userId", _currentUserId },
                 { "threadData", json }
             };
             
@@ -119,7 +126,8 @@ public class CosmosDbAgentThreadStore : AgentThreadStore
     {
         try
         {
-            var indexKey = GetThreadIndexKey(userId);
+            SetCurrentUserId(userId);
+            var indexKey = GetThreadIndexKey();
             _logger.LogDebug("Retrieving thread index | UserId: {UserId} | IndexKey: {IndexKey}", userId, indexKey);
             
             var items = await _storage.ReadAsync(new[] { indexKey }, cancellationToken);
@@ -199,7 +207,8 @@ public class CosmosDbAgentThreadStore : AgentThreadStore
     {
         try
         {
-            var indexKey = GetThreadIndexKey(userId);
+            SetCurrentUserId(userId);
+            var indexKey = GetThreadIndexKey();
             var items = await _storage.ReadAsync(new[] { indexKey }, cancellationToken);
 
             List<ThreadMetadata> threads;
@@ -274,10 +283,11 @@ public class CosmosDbAgentThreadStore : AgentThreadStore
                     CreatedAt = DateTimeOffset.UtcNow
                 }); // Most recent first
                 
-                // Create wrapper document with id
+                // Create wrapper document with id and userId
                 var document = new Dictionary<string, object>
                 {
                     { "id", indexKey },
+                    { "userId", userId },
                     { "threads", threads }
                 };
                 
@@ -300,6 +310,6 @@ public class CosmosDbAgentThreadStore : AgentThreadStore
         }
     }
 
-    private static string GetThreadKey(string threadId) => $"thread:{threadId}";
-    private static string GetThreadIndexKey(string userId) => $"thread-index:{userId}";
+    private string GetThreadKey(string threadId) => $"{_currentUserId}:{threadId}";
+    private string GetThreadIndexKey() => $"thread-index:{_currentUserId}";
 }
