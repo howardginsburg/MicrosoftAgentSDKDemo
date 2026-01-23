@@ -8,6 +8,7 @@ using Microsoft.Agents.AI.Hosting;
 using Microsoft.Agents.Storage;
 using Microsoft.Agents.Storage.CosmosDb;
 using MicrosoftAgentSDKDemo.Services;
+using Spectre.Console;
 
 var host = Host.CreateDefaultBuilder(args)
     .ConfigureAppConfiguration((context, config) =>
@@ -96,15 +97,24 @@ while (!shouldExitApp)
             thread = await agent.GetNewThreadAsync();
             threadId = Guid.NewGuid().ToString();
             
-            // Set current user and save thread and add to user index with the first message as title
+            // Set current user and add to user index with the first message as title
             threadStore.SetCurrentUserId(username);
-            await threadStore.SaveThreadAsync(agent, threadId, thread);
             await threadStore.AddThreadToUserIndexAsync(username, threadId, selection.FirstMessage);
             
             consoleUI.DisplayThreadCreated(threadId);
 
-            // Send first message
-            var response = await agent.RunAsync(selection.FirstMessage, thread);
+            // Send first message with status display
+            var response = await AnsiConsole.Status()
+                .Spinner(Spinner.Known.Dots)
+                .SpinnerStyle(Style.Parse("cyan"))
+                .StartAsync("🤔 Agent is thinking...", async ctx => 
+                {
+                    return await agent.RunAsync(selection.FirstMessage, thread);
+                });
+            
+            // Save thread AFTER first message so chat history key is available
+            await threadStore.SaveThreadAsync(agent, threadId, thread);
+            
             consoleUI.DisplayAgentResponse(response.Text);
         }
         else if (selection.Type == ThreadSelectionType.Existing && selection.ThreadId != null)
@@ -116,7 +126,37 @@ while (!shouldExitApp)
             {
                 threadStore.SetCurrentUserId(username);
                 thread = await threadStore.GetThreadAsync(agent, threadId);
-                consoleUI.DisplayThreadLoaded(threadId);
+                
+                // Get the chat history key that was stored in the thread document
+                var chatHistoryKey = threadStore.LastChatHistoryKey;
+                logger.LogInformation("Chat history key from thread: {Key}", chatHistoryKey);
+                
+                if (!string.IsNullOrEmpty(chatHistoryKey))
+                {
+                    var storage = host.Services.GetRequiredService<IStorage>();
+                    var loggerFactory = host.Services.GetRequiredService<ILoggerFactory>();
+                    var messageStore = new CosmosDbChatMessageStore(storage, username, 
+                        System.Text.Json.JsonSerializer.SerializeToElement(chatHistoryKey), 
+                        loggerFactory.CreateLogger<CosmosDbChatMessageStore>());
+                    var messages = await messageStore.GetMessagesAsync(chatHistoryKey);
+                    
+                    logger.LogInformation("Retrieved {Count} messages", messages.Count());
+                    
+                    if (messages.Any())
+                    {
+                        consoleUI.DisplayConversationHistory(messages, username);
+                    }
+                    else
+                    {
+                        logger.LogWarning("No messages found in chat history");
+                        consoleUI.DisplayThreadLoaded(threadId);
+                    }
+                }
+                else
+                {
+                    logger.LogInformation("No chat history key - new thread or not yet used");
+                    consoleUI.DisplayThreadLoaded(threadId);
+                }
             }
             catch (InvalidOperationException)
             {
@@ -145,8 +185,14 @@ while (!shouldExitApp)
                 {
                     logger.LogDebug("Processing message | UserId: {UserId} | ThreadId: {ThreadId}", username, threadId);
                     
-                    // Send message through agent - framework handles conversation history
-                    var response = await agent.RunAsync(input, thread);
+                    // Send message through agent with status display
+                    var response = await AnsiConsole.Status()
+                        .Spinner(Spinner.Known.Dots)
+                        .SpinnerStyle(Style.Parse("cyan"))
+                        .StartAsync("🤔 Agent is thinking...", async ctx => 
+                        {
+                            return await agent.RunAsync(input, thread);
+                        });
                     
                     // Explicitly save thread after each interaction to persist conversation history
                     await threadStore.SaveThreadAsync(agent, threadId, thread);

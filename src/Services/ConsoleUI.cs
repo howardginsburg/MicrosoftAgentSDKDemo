@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using Spectre.Console;
 
 namespace MicrosoftAgentSDKDemo.Services;
 
@@ -13,6 +14,7 @@ public interface IConsoleUI
     Task<string?> GetChatInputAsync(string username);
     void DisplayThreadCreated(string threadId);
     void DisplayThreadLoaded(string threadId);
+    void DisplayConversationHistory(IEnumerable<Microsoft.Extensions.AI.ChatMessage> messages, string username);
     void DisplayAgentResponse(string response);
     void DisplayError(string message);
     void DisplayGoodbye();
@@ -38,89 +40,176 @@ public class ConsoleUI : IConsoleUI
 
     public async Task<string> GetUsernameAsync()
     {
-        Console.Write("Enter your username: ");
-        return await Task.FromResult(Console.ReadLine() ?? "User");
+        AnsiConsole.Clear();
+        AnsiConsole.Write(
+            new FigletText("Agent SDK Demo")
+                .Centered()
+                .Color(Color.Cyan1));
+        
+        AnsiConsole.WriteLine();
+        
+        var username = AnsiConsole.Prompt(
+            new TextPrompt<string>("[cyan1]Enter your username:[/]")
+                .PromptStyle("green")
+                .ValidationErrorMessage("[red]Username cannot be empty[/]")
+                .Validate(name => !string.IsNullOrWhiteSpace(name)));
+        
+        return await Task.FromResult(username);
     }
 
     public async Task<ThreadSelection> GetThreadSelectionAsync(Dictionary<string, string> threads, string username)
     {
-        Console.WriteLine("\nSelect a thread:");
-        Console.WriteLine("  1. [NEW] - Start a new conversation");
+        AnsiConsole.Clear();
         
-        int index = 2;
+        var rule = new Rule($"[cyan1]{username}'s Conversation Threads[/]");
+        rule.Style = Style.Parse("cyan1");
+        AnsiConsole.Write(rule);
+        AnsiConsole.WriteLine();
+        
+        // Build selection choices
+        var choices = new List<string> { "[green]📝 Start a new conversation[/]" };
+        
+        var threadList = new List<string>();
         foreach (var thread in threads)
         {
-            var displayTitle = thread.Value.Length > 60 ? thread.Value.Substring(0, 57) + "..." : thread.Value;
-            Console.WriteLine($"  {index}. {displayTitle}");
-            index++;
+            var displayTitle = thread.Value.Length > 70 ? thread.Value.Substring(0, 67) + "..." : thread.Value;
+            var choice = $"[yellow]💬[/] {displayTitle}";
+            choices.Add(choice);
+            threadList.Add(thread.Key); // Track actual thread IDs
         }
         
-        Console.WriteLine($"  {index}. [QUIT] - Exit the application");
+        choices.Add("[red]🚪 Logout[/]");
         
-        Console.Write("\nEnter thread number: ");
-        var selection = Console.ReadLine() ?? string.Empty;
+        var selection = AnsiConsole.Prompt(
+            new SelectionPrompt<string>()
+                .Title("[cyan1]Select an option:[/]")
+                .PageSize(10)
+                .MoreChoicesText("[grey](Move up and down to see more threads)[/]")
+                .AddChoices(choices));
         
-        if (!int.TryParse(selection, out var choice))
+        if (selection.Contains("Start a new conversation"))
         {
-            return await Task.FromResult(new ThreadSelection(ThreadSelectionType.Exit));
-        }
-
-        if (choice == 1)
-        {
-            // New thread
             var firstMessage = await GetFirstMessageAsync();
             return new ThreadSelection(ThreadSelectionType.New, FirstMessage: firstMessage);
         }
-        else if (choice >= 2 && choice < index)
+        else if (selection.Contains("Logout"))
         {
-            // Existing thread
-            var selectedThreadId = threads.Keys.ElementAt(choice - 2);
-            return new ThreadSelection(ThreadSelectionType.Existing, ThreadId: selectedThreadId);
-        }
-        else if (choice == index)
-        {
-            // Exit
             return new ThreadSelection(ThreadSelectionType.Exit);
         }
-
-        return await Task.FromResult(new ThreadSelection(ThreadSelectionType.Exit));
+        else
+        {
+            // Find the thread ID based on selection index
+            var selectedIndex = choices.IndexOf(selection) - 1; // -1 because first choice is "new"
+            var selectedThreadId = threadList[selectedIndex];
+            return new ThreadSelection(ThreadSelectionType.Existing, ThreadId: selectedThreadId);
+        }
     }
 
     public async Task<string?> GetFirstMessageAsync()
     {
-        Console.Write("First message: ");
-        return await Task.FromResult(Console.ReadLine());
+        AnsiConsole.WriteLine();
+        var message = AnsiConsole.Prompt(
+            new TextPrompt<string>("[cyan1]What would you like to talk about?[/]")
+                .PromptStyle("green")
+                .AllowEmpty());
+        
+        return await Task.FromResult(message);
     }
 
     public async Task<string?> GetChatInputAsync(string username)
     {
-        Console.WriteLine();
-        Console.Write($"{username}> ");
-        return await Task.FromResult(Console.ReadLine());
+        AnsiConsole.WriteLine();
+        AnsiConsole.Markup($"[bold cyan1]{username}[/] [grey]>[/] ");
+        var input = Console.ReadLine();
+        return await Task.FromResult(input);
     }
 
     public void DisplayThreadCreated(string threadId)
     {
-        Console.WriteLine($"\nCreated new thread (ID: {threadId})\n");
+        AnsiConsole.WriteLine();
+        AnsiConsole.MarkupLine($"[green]✓[/] Created new conversation");
+        AnsiConsole.WriteLine();
     }
 
     public void DisplayThreadLoaded(string threadId)
     {
-        Console.WriteLine($"\nLoaded thread (ID: {threadId})\n");
+        AnsiConsole.WriteLine();
+        AnsiConsole.MarkupLine($"[green]✓[/] Conversation loaded");
+        AnsiConsole.WriteLine();
+    }
+
+    public void DisplayConversationHistory(IEnumerable<Microsoft.Extensions.AI.ChatMessage> messages, string username)
+    {
+        AnsiConsole.Clear();
+        
+        var rule = new Rule("[cyan1]📜 Conversation History[/]");
+        rule.Style = Style.Parse("cyan1");
+        AnsiConsole.Write(rule);
+        AnsiConsole.WriteLine();
+
+        foreach (var message in messages)
+        {
+            var text = message.Text ?? string.Empty;
+            
+            // Skip empty messages or tool calls
+            if (string.IsNullOrWhiteSpace(text))
+                continue;
+
+            if (message.Role.Value == "user")
+            {
+                AnsiConsole.MarkupLine($"[bold cyan1]👤 {username.EscapeMarkup()}:[/] {text.EscapeMarkup()}");
+                AnsiConsole.WriteLine();
+            }
+            else if (message.Role.Value == "assistant")
+            {
+                var panel = new Panel(new Markup(text.EscapeMarkup()))
+                {
+                    Header = new PanelHeader("[bold blue]🤖 Agent[/]", Justify.Left),
+                    Border = BoxBorder.Rounded,
+                    BorderStyle = new Style(Color.Blue),
+                    Padding = new Padding(1, 0)
+                };
+                
+                AnsiConsole.Write(panel);
+                AnsiConsole.WriteLine();
+            }
+        }
+        
+        var separator = new Rule();
+        separator.Style = Style.Parse("grey");
+        AnsiConsole.Write(separator);
+        AnsiConsole.WriteLine();
     }
 
     public void DisplayAgentResponse(string response)
     {
-        Console.WriteLine($"\nAgent: {response}\n");
+        AnsiConsole.WriteLine();
+        
+        var panel = new Panel(new Markup(response.EscapeMarkup()))
+        {
+            Header = new PanelHeader("[bold blue]🤖 Agent Response[/]", Justify.Left),
+            Border = BoxBorder.Rounded,
+            BorderStyle = new Style(Color.Blue),
+            Padding = new Padding(2, 1)
+        };
+        
+        AnsiConsole.Write(panel);
+        AnsiConsole.WriteLine();
     }
 
     public void DisplayError(string message)
     {
-        Console.WriteLine($"Error: {message}");
+        AnsiConsole.WriteLine();
+        AnsiConsole.MarkupLine($"[bold red]❌ Error:[/] {message.EscapeMarkup()}");
+        AnsiConsole.WriteLine();
     }
 
     public void DisplayGoodbye()
     {
-        Console.WriteLine("Goodbye!");
+        AnsiConsole.WriteLine();
+        var rule = new Rule("[cyan1]Goodbye! 👋[/]");
+        rule.Style = Style.Parse("cyan1");
+        AnsiConsole.Write(rule);
+        AnsiConsole.WriteLine();
     }
 }

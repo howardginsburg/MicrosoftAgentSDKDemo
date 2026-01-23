@@ -18,6 +18,9 @@ public class CosmosDbAgentThreadStore : AgentThreadStore
     private readonly IStorage _storage;
     private readonly ILogger<CosmosDbAgentThreadStore> _logger;
     private string? _currentUserId;
+    
+    // Store the last retrieved chat history key
+    public string? LastChatHistoryKey { get; private set; }
 
     public CosmosDbAgentThreadStore(
         IStorage storage,
@@ -101,6 +104,21 @@ public class CosmosDbAgentThreadStore : AgentThreadStore
                 {
                     if (docElement.TryGetProperty("threadData", out var threadDataElement))
                     {
+                        // Extract chat history key from threadData.storeState
+                        if (threadDataElement.ValueKind == JsonValueKind.Object &&
+                            threadDataElement.TryGetProperty("storeState", out var storeStateElement) &&
+                            storeStateElement.ValueKind == JsonValueKind.String)
+                        {
+                            LastChatHistoryKey = storeStateElement.GetString();
+                            _logger.LogDebug("Found chat history key in threadData | ThreadId: {ThreadId} | ChatHistoryKey: {ChatHistoryKey}", 
+                                threadId, LastChatHistoryKey);
+                        }
+                        else
+                        {
+                            LastChatHistoryKey = null;
+                            _logger.LogDebug("No chat history key in threadData | ThreadId: {ThreadId}", threadId);
+                        }
+                        
                         var thread = await agent.DeserializeThreadAsync(threadDataElement, cancellationToken: cancellationToken);
                         _logger.LogDebug("Thread loaded | ThreadId: {ThreadId}", threadId);
                         return thread;

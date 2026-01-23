@@ -246,4 +246,51 @@ internal sealed class CosmosDbChatMessageStore : ChatMessageStore
         _logger.LogDebug("Serializing ThreadDbKey: {ThreadDbKey}", ThreadDbKey);
         return JsonSerializer.SerializeToElement(ThreadDbKey, jsonSerializerOptions);
     }
+
+    /// <summary>
+    /// Public method to retrieve messages for display purposes.
+    /// </summary>
+    public async Task<IEnumerable<ChatMessage>> GetMessagesAsync(string threadDbKey, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var chatHistoryDocument = await _storage.ReadAsync([threadDbKey], cancellationToken);
+
+            if (chatHistoryDocument.TryGetValue(threadDbKey, out var doc))
+            {
+                JsonElement docElement;
+                
+                if (doc is JsonElement jsonElem)
+                {
+                    docElement = jsonElem;
+                }
+                else if (doc is Dictionary<string, object> dict)
+                {
+                    docElement = JsonSerializer.SerializeToElement(dict);
+                }
+                else
+                {
+                    return [];
+                }
+
+                // Unwrap nested document structure
+                if (docElement.TryGetProperty("document", out var nestedDoc))
+                {
+                    docElement = nestedDoc;
+                }
+
+                if (docElement.TryGetProperty("messages", out var messagesElement))
+                {
+                    var messages = JsonSerializer.Deserialize<List<ChatMessage>>(messagesElement.GetRawText(), s_jsonOptions) ?? new List<ChatMessage>();
+                    return messages;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error retrieving messages for ThreadDbKey: {ThreadDbKey}", threadDbKey);
+        }
+
+        return [];
+    }
 }
