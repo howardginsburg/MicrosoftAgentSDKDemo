@@ -1,0 +1,43 @@
+# Build results
+bin/
+obj/
+*.dll
+*.exe
+*.pdb
+
+# Visual Studio
+.vs/
+.vscode/
+*.user
+*.userosscache
+*.sln.docstates
+
+# User-specific files
+appsettings.json
+appsettings.*.json
+
+# IDE
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log
+
+# Dependencies
+.dotnet/
+node_modules/
+
+# Temporary files
+.temp/
+tmp/
+
+# Environment files
+.env
+.env.local
