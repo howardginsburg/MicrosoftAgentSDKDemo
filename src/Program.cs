@@ -24,6 +24,7 @@ var host = Host.CreateDefaultBuilder(args)
 
         // Register Agent Framework and persistence services
         services.AddSingleton<IThreadManager, ThreadManager>();
+        services.AddSingleton<IMCPServerManager, MCPServerManager>();
         services.AddSingleton<IAgentFactory, ChatAgentFactory>();
         services.AddSingleton<ThreadTools>();
         services.AddSingleton<IConsoleUI, ConsoleUI>();

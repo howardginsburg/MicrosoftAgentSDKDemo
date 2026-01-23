@@ -25,12 +25,18 @@ public class ChatAgentFactory : IAgentFactory
 {
     private readonly IConfiguration _configuration;
     private readonly IThreadManager _threadManager;
+    private readonly IMCPServerManager _mcpServerManager;
     private readonly ILogger<ChatAgentFactory> _logger;
 
-    public ChatAgentFactory(IConfiguration configuration, IThreadManager threadManager, ILogger<ChatAgentFactory> logger)
+    public ChatAgentFactory(
+        IConfiguration configuration,
+        IThreadManager threadManager,
+        IMCPServerManager mcpServerManager,
+        ILogger<ChatAgentFactory> logger)
     {
         _configuration = configuration;
         _threadManager = threadManager;
+        _mcpServerManager = mcpServerManager;
         _logger = logger;
     }
 
@@ -45,9 +51,22 @@ public class ChatAgentFactory : IAgentFactory
         var azureOpenAIClient = new AzureOpenAIClient(new Uri(endpoint), credential);
         var chatClient = azureOpenAIClient.GetChatClient(deploymentName);
 
-        _logger.LogDebug("Agent created | UserId: {UserId} | Deployment: {DeploymentName}", userId, deploymentName);
+        // Load Microsoft Learn documentation tools from MCPServerManager
+        IList<AITool> learnTools = [];
+        try
+        {
+            learnTools = await _mcpServerManager.GetMicrosoftLearnToolsAsync();
+            _logger.LogInformation("Agent will have access to {ToolCount} Microsoft Learn documentation tools", learnTools.Count);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to load Microsoft Learn tools, agent will continue without them");
+        }
+
+        _logger.LogDebug("Agent created | UserId: {UserId} | Deployment: {DeploymentName} | ToolCount: {ToolCount}",
+            userId, deploymentName, learnTools.Count);
         
-        return await Task.FromResult(new AzureOpenAIAgent(chatClient, systemInstructions, _threadManager, _logger));
+        return await Task.FromResult(new AzureOpenAIAgent(chatClient, systemInstructions, _threadManager, learnTools, _logger));
     }
 }
 
@@ -56,17 +75,20 @@ public class AzureOpenAIAgent : IAgentService
     private readonly ChatClient _chatClient;
     private readonly string _systemInstructions;
     private readonly IThreadManager _threadManager;
+    private readonly IList<AITool> _learnTools;
     private readonly ILogger<ChatAgentFactory> _logger;
 
     public AzureOpenAIAgent(
         ChatClient chatClient,
         string systemInstructions,
         IThreadManager threadManager,
+        IList<AITool> learnTools,
         ILogger<ChatAgentFactory> logger)
     {
         _chatClient = chatClient;
         _systemInstructions = systemInstructions;
         _threadManager = threadManager;
+        _learnTools = learnTools;
         _logger = logger;
     }
 
@@ -104,7 +126,20 @@ public class AzureOpenAIAgent : IAgentService
             // Add current message
             chatMessages.Add(new UserChatMessage(userMessage));
 
-            var response = await _chatClient.CompleteChatAsync(chatMessages);
+            var chatOptions = new ChatCompletionOptions
+            {
+                Temperature = 0.7f,
+                MaxOutputTokenCount = 2048
+            };
+
+            // Log tool availability
+            if (_learnTools.Count > 0)
+            {
+                var toolNames = string.Join(", ", _learnTools.Select(t => t.Name));
+                _logger.LogInformation("Processing message with available MCP tools: {ToolNames}", toolNames);
+            }
+
+            var response = await _chatClient.CompleteChatAsync(chatMessages, chatOptions);
             var assistantResponse = response.Value.Content[0].Text ?? "";
 
             // Save message exchange
