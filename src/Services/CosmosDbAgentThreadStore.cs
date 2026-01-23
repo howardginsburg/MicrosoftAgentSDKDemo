@@ -63,8 +63,27 @@ public class CosmosDbAgentThreadStore : AgentThreadStore
 
             if (items != null && items.TryGetValue(key, out var value))
             {
+                // Try to handle both JsonElement and Dictionary<string, object> formats
+                JsonElement docElement;
+                
+                if (value is JsonElement jsonElem)
+                {
+                    docElement = jsonElem;
+                }
+                else if (value is Dictionary<string, object> dict)
+                {
+                    // Convert Dictionary to JsonElement
+                    docElement = JsonSerializer.SerializeToElement(dict);
+                }
+                else
+                {
+                    _logger.LogError("Thread document is unexpected type: {Type} | ThreadId: {ThreadId}", 
+                        value?.GetType().FullName ?? "null", threadId);
+                    throw new InvalidOperationException($"Thread {threadId} has invalid format (unexpected type)");
+                }
+                
                 // Extract threadData from the wrapper document
-                if (value is JsonElement docElement && docElement.ValueKind == JsonValueKind.Object)
+                if (docElement.ValueKind == JsonValueKind.Object)
                 {
                     if (docElement.TryGetProperty("threadData", out var threadDataElement))
                     {
@@ -74,6 +93,8 @@ public class CosmosDbAgentThreadStore : AgentThreadStore
                     }
                 }
                 
+                _logger.LogError("Thread document missing 'threadData' property or not an object | ThreadId: {ThreadId} | Kind: {Kind}", 
+                    threadId, docElement.ValueKind);
                 throw new InvalidOperationException($"Thread {threadId} has invalid format");
             }
 
@@ -92,18 +113,54 @@ public class CosmosDbAgentThreadStore : AgentThreadStore
         try
         {
             var indexKey = GetThreadIndexKey(userId);
+            _logger.LogDebug("Retrieving thread index | UserId: {UserId} | IndexKey: {IndexKey}", userId, indexKey);
+            
             var items = await _storage.ReadAsync(new[] { indexKey }, cancellationToken);
+            _logger.LogDebug("Storage returned {Count} items", items?.Count ?? 0);
 
             if (items != null && items.TryGetValue(indexKey, out var value))
             {
-                if (value is JsonElement docElement && docElement.ValueKind == JsonValueKind.Object)
+                _logger.LogDebug("Found index document | ValueType: {ValueType}", value?.GetType().Name ?? "null");
+                
+                // Try to handle both JsonElement and Dictionary<string, object> formats
+                JsonElement docElement;
+                
+                if (value is JsonElement jsonElem)
+                {
+                    docElement = jsonElem;
+                }
+                else if (value is Dictionary<string, object> dict)
+                {
+                    // Convert Dictionary to JsonElement
+                    docElement = JsonSerializer.SerializeToElement(dict);
+                }
+                else
+                {
+                    _logger.LogWarning("Index document is unexpected type: {Type} | UserId: {UserId}", value?.GetType().FullName ?? "null", userId);
+                    return new List<string>();
+                }
+                
+                if (docElement.ValueKind == JsonValueKind.Object)
                 {
                     if (docElement.TryGetProperty("threadIds", out var threadIdsElement))
                     {
                         var threadIds = JsonSerializer.Deserialize<List<string>>(threadIdsElement.GetRawText()) ?? new List<string>();
+                        _logger.LogInformation("Retrieved {Count} thread IDs for user {UserId}", threadIds.Count, userId);
                         return threadIds.Take(limit).ToList();
                     }
+                    else
+                    {
+                        _logger.LogWarning("Index document missing 'threadIds' property | UserId: {UserId}", userId);
+                    }
                 }
+                else
+                {
+                    _logger.LogWarning("Index document JsonElement is not an object, it's {Kind} | UserId: {UserId}", docElement.ValueKind, userId);
+                }
+            }
+            else
+            {
+                _logger.LogInformation("No thread index found for user {UserId} - returning empty list", userId);
             }
 
             return new List<string>();
@@ -125,7 +182,26 @@ public class CosmosDbAgentThreadStore : AgentThreadStore
             List<string> threadIds;
             if (items != null && items.TryGetValue(indexKey, out var value))
             {
-                if (value is JsonElement docElement && docElement.ValueKind == JsonValueKind.Object)
+                // Try to handle both JsonElement and Dictionary<string, object> formats
+                JsonElement docElement;
+                
+                if (value is JsonElement jsonElem)
+                {
+                    docElement = jsonElem;
+                }
+                else if (value is Dictionary<string, object> dict)
+                {
+                    // Convert Dictionary to JsonElement
+                    docElement = JsonSerializer.SerializeToElement(dict);
+                }
+                else
+                {
+                    _logger.LogWarning("Unexpected index document type when adding thread: {Type}", value?.GetType().FullName ?? "null");
+                    threadIds = new List<string>();
+                    docElement = default;
+                }
+                
+                if (docElement.ValueKind == JsonValueKind.Object)
                 {
                     if (docElement.TryGetProperty("threadIds", out var threadIdsElement))
                     {
@@ -161,6 +237,13 @@ public class CosmosDbAgentThreadStore : AgentThreadStore
                 {
                     { indexKey, document }
                 }, cancellationToken);
+                
+                _logger.LogInformation("Added thread to user index | UserId: {UserId} | ThreadId: {ThreadId} | TotalThreads: {TotalThreads}", 
+                    userId, threadId, threadIds.Count);
+            }
+            else
+            {
+                _logger.LogDebug("Thread already in user index | UserId: {UserId} | ThreadId: {ThreadId}", userId, threadId);
             }
         }
         catch (Exception ex)
