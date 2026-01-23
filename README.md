@@ -113,6 +113,8 @@ src/
 │   ├── MCPServerManager.cs             # MCP server connection manager
 │   ├── CosmosDbAgentThreadStore.cs     # Thread persistence layer
 │   └── CosmosDbChatMessageStore.cs     # Message persistence layer
+├── prompts/
+│   └── system-instructions.txt         # Agent behavior instructions
 ├── appsettings.json                    # Configuration (not in source control)
 └── appsettings.json.sample             # Sample configuration template
 ```
@@ -122,13 +124,15 @@ src/
 See `appsettings.json.sample` for a complete configuration template. The application uses:
 - **Azure CLI authentication** for Azure OpenAI (requires `az login` and `Cognitive Services OpenAI User` role)
 - **Account key** for Cosmos DB
+- **System instructions** in `src/prompts/system-instructions.txt` (customize agent behavior)
 
 Key settings in `appsettings.json`:
 ```json
 {
   "AzureOpenAI": {
     "Endpoint": "https://your-openai.cognitiveservices.azure.com",
-    "DeploymentName": "gpt-4o"
+    "DeploymentName": "gpt-4o",
+    "SystemInstructionsFile": "prompts/system-instructions.txt"
   },
   "CosmosDB": {
     "Endpoint": "https://your-cosmos.documents.azure.com:443/",

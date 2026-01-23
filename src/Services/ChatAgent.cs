@@ -44,7 +44,16 @@ public class ChatAgentFactory : IAgentFactory
         var openAIConfig = _configuration.GetSection("AzureOpenAI");
         var endpoint = openAIConfig["Endpoint"] ?? throw new InvalidOperationException("AzureOpenAI Endpoint not configured");
         var deploymentName = openAIConfig["DeploymentName"] ?? "gpt-4";
-        var systemInstructions = openAIConfig["SystemInstructions"] ?? throw new InvalidOperationException("SystemInstructions not configured");
+        var systemInstructionsPath = openAIConfig["SystemInstructionsFile"] ?? "prompts/system-instructions.txt";
+        
+        // Load system instructions from file
+        var fullPath = Path.Combine(AppContext.BaseDirectory, systemInstructionsPath);
+        if (!File.Exists(fullPath))
+        {
+            throw new InvalidOperationException($"System instructions file not found: {fullPath}");
+        }
+        var systemInstructions = await File.ReadAllTextAsync(fullPath);
+        _logger.LogDebug("Loaded system instructions from {Path} ({Length} characters)", systemInstructionsPath, systemInstructions.Length);
 
         var credential = new AzureCliCredential();
         var azureOpenAIClient = new AzureOpenAIClient(new Uri(endpoint), credential);
@@ -54,7 +63,7 @@ public class ChatAgentFactory : IAgentFactory
         
         if (mcpTools.Any())
         {
-            _logger.LogInformation("Agent will have access to {ToolCount} MCP tools: {ToolNames}", 
+            _logger.LogDebug("Agent will have access to {ToolCount} MCP tools: {ToolNames}", 
                 mcpTools.Count, string.Join(", ", mcpTools.Select(t => t.Name)));
         }
         else

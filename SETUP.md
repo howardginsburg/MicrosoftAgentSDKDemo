@@ -310,11 +310,22 @@ Endpoint: https://learn.microsoft.com/api/mcp (no configuration needed)
 
 ## System Instructions
 
-Customize agent behavior by editing the `SystemInstructions` field in appsettings.json:
+Customize agent behavior by editing `src/prompts/system-instructions.txt`:
 
-```json
-"SystemInstructions": "You are a helpful AI assistant with access to Microsoft Learn documentation. Answer questions accurately and cite sources when possible."
+```text
+You are a helpful AI assistant with access to Microsoft Learn documentation...
 ```
+
+The file path is configured in appsettings.json:
+```json
+"SystemInstructionsFile": "prompts/system-instructions.txt"
+```
+
+Benefits of separate file:
+- No JSON escaping needed
+- Better version control for prompt changes
+- Easier collaboration with prompt engineers
+- Support for multi-line instructions with proper formatting
 
 ## Development Tips
 
@@ -382,6 +393,8 @@ src/
 ├── appsettings.json                  # Configuration (not in source control)
 ├── appsettings.json.sample           # Sample configuration template
 ├── MicrosoftAgentSDKDemo.csproj      # Project file with NuGet packages
+├── prompts/
+│   └── system-instructions.txt       # Agent behavior instructions (edit to customize)
 └── Services/
     ├── ChatAgent.cs                  # Azure OpenAI agent factory
     ├── ConsoleUI.cs                  # Spectre.Console UI implementation

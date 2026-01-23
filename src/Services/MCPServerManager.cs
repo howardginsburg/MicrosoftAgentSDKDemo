@@ -41,12 +41,12 @@ public class MCPServerManager : IMCPServerManager
 
             _mcpClient = await McpClientFactory.CreateAsync(transport);
 
-            _logger.LogInformation("Connected to Microsoft Docs MCP server at https://learn.microsoft.com/api/mcp");
+            _logger.LogDebug("Connected to Microsoft Docs MCP server at https://learn.microsoft.com/api/mcp");
 
             // Retrieve the list of tools from the MCP server
             var mcpTools = await _mcpClient.ListToolsAsync();
             
-            _logger.LogInformation("Retrieved {ToolCount} tools from MCP server: {ToolNames}", 
+            _logger.LogDebug("Retrieved {ToolCount} tools from MCP server: {ToolNames}", 
                 mcpTools.Count(), string.Join(", ", mcpTools.Select(t => t.Name)));
 
             // McpClientTool extends AIFunction which implements AITool
@@ -65,7 +65,7 @@ public class MCPServerManager : IMCPServerManager
         if (_mcpClient != null)
         {
             await _mcpClient.DisposeAsync();
-            _logger.LogInformation("Disposed MCP client");
+            _logger.LogDebug("Disposed MCP client");
         }
     }
 }

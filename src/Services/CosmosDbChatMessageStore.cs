@@ -101,7 +101,7 @@ internal sealed class CosmosDbChatMessageStore : ChatMessageStore
                 if (docElement.ValueKind == JsonValueKind.Object && docElement.TryGetProperty("messages", out var messagesElement))
                 {
                     var messages = JsonSerializer.Deserialize<List<ChatMessage>>(messagesElement, s_jsonOptions);
-                    _logger.LogInformation("Retrieved {Count} messages from chat history | ThreadDbKey: {ThreadDbKey}", messages?.Count ?? 0, ThreadDbKey);
+                    _logger.LogDebug("Retrieved {Count} messages from chat history | ThreadDbKey: {ThreadDbKey}", messages?.Count ?? 0, ThreadDbKey);
                     return messages ?? [];
                 }
                 else
@@ -141,7 +141,7 @@ internal sealed class CosmosDbChatMessageStore : ChatMessageStore
         if (ThreadDbKey is null)
         {
             ThreadDbKey = $"chat-history-{Guid.NewGuid():N}";
-            _logger.LogInformation("Generated new ThreadDbKey: {ThreadDbKey}", ThreadDbKey);
+            _logger.LogDebug("Generated new ThreadDbKey: {ThreadDbKey}", ThreadDbKey);
         }
 
         try
@@ -199,7 +199,7 @@ internal sealed class CosmosDbChatMessageStore : ChatMessageStore
             var newMessageCount = allNewMessages.Count();
             
             // Log details about the messages being stored
-            _logger.LogInformation("Messages to store: RequestMessages={RequestCount}, AIContextProviderMessages={ContextCount}, ResponseMessages={ResponseCount}",
+            _logger.LogDebug("Messages to store: RequestMessages={RequestCount}, AIContextProviderMessages={ContextCount}, ResponseMessages={ResponseCount}",
                 context.RequestMessages.Count(), 
                 context.AIContextProviderMessages?.Count() ?? 0,
                 context.ResponseMessages?.Count() ?? 0);
@@ -208,7 +208,7 @@ internal sealed class CosmosDbChatMessageStore : ChatMessageStore
             {
                 var contentCount = msg.Contents?.Count ?? 0;
                 var textContent = msg.Text ?? "(no text)";
-                _logger.LogInformation("Message: Role={Role}, Contents={ContentCount}, Text={Text}", 
+                _logger.LogDebug("Message: Role={Role}, Contents={ContentCount}, Text={Text}", 
                     msg.Role, contentCount, textContent.Length > 50 ? textContent.Substring(0, 50) + "..." : textContent);
             }
             
@@ -229,7 +229,7 @@ internal sealed class CosmosDbChatMessageStore : ChatMessageStore
             };
 
             await _storage.WriteAsync(batch, cancellationToken);
-            _logger.LogInformation("Stored chat history | ThreadDbKey: {ThreadDbKey} | NewMessages: {NewMessages} | TotalMessages: {TotalMessages}", 
+            _logger.LogDebug("Stored chat history | ThreadDbKey: {ThreadDbKey} | NewMessages: {NewMessages} | TotalMessages: {TotalMessages}", 
                 ThreadDbKey, newMessageCount, existingMessages.Count);
         }
         catch (Exception ex)
