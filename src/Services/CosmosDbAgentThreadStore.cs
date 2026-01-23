@@ -6,6 +6,13 @@ using Microsoft.Extensions.Logging;
 
 namespace MicrosoftAgentSDKDemo.Services;
 
+public class ThreadMetadata
+{
+    public string ThreadId { get; set; } = string.Empty;
+    public string Title { get; set; } = string.Empty;
+    public DateTimeOffset CreatedAt { get; set; }
+}
+
 public class CosmosDbAgentThreadStore : AgentThreadStore
 {
     private readonly IStorage _storage;
@@ -108,7 +115,7 @@ public class CosmosDbAgentThreadStore : AgentThreadStore
         }
     }
 
-    public async Task<List<string>> GetUserThreadIdsAsync(string userId, int limit = 10, CancellationToken cancellationToken = default)
+    public async Task<Dictionary<string, string>> GetUserThreadsAsync(string userId, int limit = 10, CancellationToken cancellationToken = default)
     {
         try
         {
@@ -137,20 +144,36 @@ public class CosmosDbAgentThreadStore : AgentThreadStore
                 else
                 {
                     _logger.LogWarning("Index document is unexpected type: {Type} | UserId: {UserId}", value?.GetType().FullName ?? "null", userId);
-                    return new List<string>();
+                    return new Dictionary<string, string>();
+                }
+                
+                // Check if this is the wrapped format from CosmosDbPartitionedStorage
+                if (docElement.TryGetProperty("document", out var nestedDoc))
+                {
+                    _logger.LogDebug("Unwrapping nested 'document' property");
+                    docElement = nestedDoc;
                 }
                 
                 if (docElement.ValueKind == JsonValueKind.Object)
                 {
-                    if (docElement.TryGetProperty("threadIds", out var threadIdsElement))
+                    // Try new format with metadata first
+                    if (docElement.TryGetProperty("threads", out var threadsElement))
+                    {
+                        var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+                        var threads = JsonSerializer.Deserialize<List<ThreadMetadata>>(threadsElement.GetRawText(), options) ?? new List<ThreadMetadata>();
+                        _logger.LogInformation("Retrieved {Count} threads with metadata for user {UserId}", threads.Count, userId);
+                        return threads.Take(limit).ToDictionary(t => t.ThreadId, t => t.Title);
+                    }
+                    // Fallback to old format with just IDs
+                    else if (docElement.TryGetProperty("threadIds", out var threadIdsElement))
                     {
                         var threadIds = JsonSerializer.Deserialize<List<string>>(threadIdsElement.GetRawText()) ?? new List<string>();
-                        _logger.LogInformation("Retrieved {Count} thread IDs for user {UserId}", threadIds.Count, userId);
-                        return threadIds.Take(limit).ToList();
+                        _logger.LogInformation("Retrieved {Count} thread IDs (old format) for user {UserId}", threadIds.Count, userId);
+                        return threadIds.Take(limit).ToDictionary(id => id, id => id);
                     }
                     else
                     {
-                        _logger.LogWarning("Index document missing 'threadIds' property | UserId: {UserId}", userId);
+                        _logger.LogWarning("Index document missing 'threads' or 'threadIds' property | UserId: {UserId}", userId);
                     }
                 }
                 else
@@ -160,26 +183,26 @@ public class CosmosDbAgentThreadStore : AgentThreadStore
             }
             else
             {
-                _logger.LogInformation("No thread index found for user {UserId} - returning empty list", userId);
+                _logger.LogInformation("No thread index found for user {UserId} - returning empty dictionary", userId);
             }
 
-            return new List<string>();
+            return new Dictionary<string, string>();
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to get user thread IDs | UserId: {UserId}", userId);
-            return new List<string>();
+            _logger.LogError(ex, "Failed to get user threads | UserId: {UserId}", userId);
+            return new Dictionary<string, string>();
         }
     }
 
-    public async Task AddThreadToUserIndexAsync(string userId, string threadId, CancellationToken cancellationToken = default)
+    public async Task AddThreadToUserIndexAsync(string userId, string threadId, string title, CancellationToken cancellationToken = default)
     {
         try
         {
             var indexKey = GetThreadIndexKey(userId);
             var items = await _storage.ReadAsync(new[] { indexKey }, cancellationToken);
 
-            List<string> threadIds;
+            List<ThreadMetadata> threads;
             if (items != null && items.TryGetValue(indexKey, out var value))
             {
                 // Try to handle both JsonElement and Dictionary<string, object> formats
@@ -197,40 +220,65 @@ public class CosmosDbAgentThreadStore : AgentThreadStore
                 else
                 {
                     _logger.LogWarning("Unexpected index document type when adding thread: {Type}", value?.GetType().FullName ?? "null");
-                    threadIds = new List<string>();
+                    threads = new List<ThreadMetadata>();
                     docElement = default;
+                }
+                
+                // Check if this is the wrapped format from CosmosDbPartitionedStorage
+                if (docElement.ValueKind == JsonValueKind.Object && docElement.TryGetProperty("document", out var nestedDoc))
+                {
+                    _logger.LogDebug("Unwrapping nested 'document' property when adding thread");
+                    docElement = nestedDoc;
                 }
                 
                 if (docElement.ValueKind == JsonValueKind.Object)
                 {
-                    if (docElement.TryGetProperty("threadIds", out var threadIdsElement))
+                    // Try new format first
+                    if (docElement.TryGetProperty("threads", out var threadsElement))
                     {
-                        threadIds = JsonSerializer.Deserialize<List<string>>(threadIdsElement.GetRawText()) ?? new List<string>();
+                        var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+                        threads = JsonSerializer.Deserialize<List<ThreadMetadata>>(threadsElement.GetRawText(), options) ?? new List<ThreadMetadata>();
+                    }
+                    // Migrate from old format
+                    else if (docElement.TryGetProperty("threadIds", out var threadIdsElement))
+                    {
+                        var oldThreadIds = JsonSerializer.Deserialize<List<string>>(threadIdsElement.GetRawText()) ?? new List<string>();
+                        threads = oldThreadIds.Select(id => new ThreadMetadata 
+                        { 
+                            ThreadId = id, 
+                            Title = id,
+                            CreatedAt = DateTimeOffset.UtcNow 
+                        }).ToList();
                     }
                     else
                     {
-                        threadIds = new List<string>();
+                        threads = new List<ThreadMetadata>();
                     }
                 }
                 else
                 {
-                    threadIds = new List<string>();
+                    threads = new List<ThreadMetadata>();
                 }
             }
             else
             {
-                threadIds = new List<string>();
+                threads = new List<ThreadMetadata>();
             }
 
-            if (!threadIds.Contains(threadId))
+            if (!threads.Any(t => t.ThreadId == threadId))
             {
-                threadIds.Insert(0, threadId); // Most recent first
+                threads.Insert(0, new ThreadMetadata
+                {
+                    ThreadId = threadId,
+                    Title = title,
+                    CreatedAt = DateTimeOffset.UtcNow
+                }); // Most recent first
                 
                 // Create wrapper document with id
                 var document = new Dictionary<string, object>
                 {
                     { "id", indexKey },
-                    { "threadIds", threadIds }
+                    { "threads", threads }
                 };
                 
                 await _storage.WriteAsync(new Dictionary<string, object>
@@ -238,8 +286,8 @@ public class CosmosDbAgentThreadStore : AgentThreadStore
                     { indexKey, document }
                 }, cancellationToken);
                 
-                _logger.LogInformation("Added thread to user index | UserId: {UserId} | ThreadId: {ThreadId} | TotalThreads: {TotalThreads}", 
-                    userId, threadId, threadIds.Count);
+                _logger.LogInformation("Added thread to user index | UserId: {UserId} | ThreadId: {ThreadId} | Title: {Title} | TotalThreads: {TotalThreads}", 
+                    userId, threadId, title, threads.Count);
             }
             else
             {

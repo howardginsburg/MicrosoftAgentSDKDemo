@@ -62,9 +62,9 @@ while (!shouldExit)
 {
     try
     {
-        // Get user's thread IDs
-        var threadIds = await threadStore.GetUserThreadIdsAsync(username, limit: 10);
-        var selection = await consoleUI.GetThreadSelectionAsync(threadIds, username);
+        // Get user's threads with metadata
+        var threads = await threadStore.GetUserThreadsAsync(username, limit: 10);
+        var selection = await consoleUI.GetThreadSelectionAsync(threads, username);
 
         if (selection.Type == ThreadSelectionType.Exit)
         {
@@ -90,9 +90,9 @@ while (!shouldExit)
             thread = await agent.GetNewThreadAsync();
             threadId = Guid.NewGuid().ToString();
             
-            // Save thread and add to user index
+            // Save thread and add to user index with the first message as title
             await threadStore.SaveThreadAsync(agent, threadId, thread);
-            await threadStore.AddThreadToUserIndexAsync(username, threadId);
+            await threadStore.AddThreadToUserIndexAsync(username, threadId, selection.FirstMessage);
             
             consoleUI.DisplayThreadCreated(threadId);
 

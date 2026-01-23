@@ -8,7 +8,7 @@ namespace MicrosoftAgentSDKDemo.Services;
 public interface IConsoleUI
 {
     Task<string> GetUsernameAsync();
-    Task<ThreadSelection> GetThreadSelectionAsync(List<string> threadIds, string username);
+    Task<ThreadSelection> GetThreadSelectionAsync(Dictionary<string, string> threads, string username);
     Task<string?> GetFirstMessageAsync();
     Task<string?> GetChatInputAsync(string username);
     void DisplayThreadCreated(string threadId);
@@ -42,39 +42,42 @@ public class ConsoleUI : IConsoleUI
         return await Task.FromResult(Console.ReadLine() ?? "User");
     }
 
-    public async Task<ThreadSelection> GetThreadSelectionAsync(List<string> threadIds, string username)
+    public async Task<ThreadSelection> GetThreadSelectionAsync(Dictionary<string, string> threads, string username)
     {
         Console.WriteLine("\nSelect a thread:");
         Console.WriteLine("  1. [NEW] - Start a new conversation");
         
-        for (int i = 0; i < threadIds.Count; i++)
+        int index = 2;
+        foreach (var thread in threads)
         {
-            Console.WriteLine($"  {i + 2}. Thread {threadIds[i]}");
+            var displayTitle = thread.Value.Length > 60 ? thread.Value.Substring(0, 57) + "..." : thread.Value;
+            Console.WriteLine($"  {index}. {displayTitle}");
+            index++;
         }
         
-        Console.WriteLine($"  {threadIds.Count + 2}. [QUIT] - Exit the application");
+        Console.WriteLine($"  {index}. [QUIT] - Exit the application");
         
         Console.Write("\nEnter thread number: ");
         var selection = Console.ReadLine() ?? string.Empty;
         
-        if (!int.TryParse(selection, out var index))
+        if (!int.TryParse(selection, out var choice))
         {
             return await Task.FromResult(new ThreadSelection(ThreadSelectionType.Exit));
         }
 
-        if (index == 1)
+        if (choice == 1)
         {
             // New thread
             var firstMessage = await GetFirstMessageAsync();
             return new ThreadSelection(ThreadSelectionType.New, FirstMessage: firstMessage);
         }
-        else if (index > 1 && index < threadIds.Count + 2)
+        else if (choice >= 2 && choice < index)
         {
             // Existing thread
-            var selectedThreadId = threadIds[index - 2];
+            var selectedThreadId = threads.Keys.ElementAt(choice - 2);
             return new ThreadSelection(ThreadSelectionType.Existing, ThreadId: selectedThreadId);
         }
-        else if (index == threadIds.Count + 2)
+        else if (choice == index)
         {
             // Exit
             return new ThreadSelection(ThreadSelectionType.Exit);
