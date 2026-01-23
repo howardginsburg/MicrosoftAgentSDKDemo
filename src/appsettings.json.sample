@@ -1,0 +1,30 @@
+{
+  "Logging": {
+    "LogLevel": {
+      "Default": "Information",
+      "MicrosoftAgentSDKDemo": "Information",
+      "MicrosoftAgentSDKDemo.Services.CosmosDbChatMessageStore": "Information",
+      "MicrosoftAgentSDKDemo.Services.CosmosDbAgentThreadStore": "Warning",
+      "Microsoft": "Warning"
+    },
+    "ApplicationInsights": {
+      "LogLevel": {
+        "Default": "Information"
+      }
+    }
+  },
+  "ApplicationInsights": {
+    "InstrumentationKey": "your-app-insights-key-here"
+  },
+  "AzureOpenAI": {
+    "Endpoint": "https://your-openai-resource.cognitiveservices.azure.com",
+    "DeploymentName": "gpt-4o",
+    "SystemInstructions": "You are a helpful agent that answers questions about Azure. Respond with factual information that is found mcp services and nothing else, and do not deviate. You must respond with citations of the sources. If asked anything else, just say you do not know."
+  },
+  "CosmosDB": {
+    "Endpoint": "https://your-cosmos-account.documents.azure.com:443/",
+    "AccountKey": "your-cosmos-account-key-here",
+    "DatabaseName": "agent-database",
+    "ContainerId": "conversations"
+  }
+}

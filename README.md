@@ -1,159 +1,183 @@
-# Microsoft Agent Framework SDK Demo
+# Microsoft Agent SDK Demo
 
-A .NET 8.0 console application demonstrating a multi-turn conversational agent using the Microsoft Agent Framework SDK with Azure OpenAI and Cosmos DB.
+A console-based AI agent application built with the Microsoft Agent Framework, featuring multi-user conversations, Azure OpenAI integration, Model Context Protocol (MCP) tools, and persistent chat history.
 
 ## Features
 
-- ✅ **Multi-turn conversations** with automatic thread management
-- ✅ **Thread persistence** in Azure Cosmos DB (embedded messages)
-- ✅ **Auto-named threads** based on first user message
-- ✅ **Azure OpenAI integration** (GPT-4 support)
-- ✅ **System instructions** for controlled agent behavior
-- ✅ **Conversation history** display when loading threads
-- ✅ **Comprehensive telemetry** with Application Insights
-- ✅ **Simple CLI interface** with thread switching
+- 🤖 **AI Agent powered by Azure OpenAI** - Uses GPT-4o for intelligent conversations
+- 📚 **MCP Integration** - Connects to Microsoft Learn documentation via Model Context Protocol
+- 💾 **Persistent Storage** - Conversation history stored in Azure Cosmos DB
+- 👥 **Multi-User Support** - Isolated conversations per user with data partitioning
+- 🎨 **Rich Console UI** - Beautiful terminal interface using Spectre.Console
+- 🔄 **Thread Management** - Create, resume, and manage conversation threads
+- 📜 **Conversation History** - Full chat history displayed when loading threads
+
+## Prerequisites
+
+- .NET 8.0 SDK
+- Azure CLI
+- Azure Subscription with:
+  - Azure OpenAI Service (GPT-4o deployment)
+  - Azure Cosmos DB account
+  - (Optional) Application Insights
 
 ## Quick Start
 
-### Prerequisites
-- .NET 8.0 SDK
-- Azure subscription with Azure OpenAI and Cosmos DB
-- Azure CLI logged in (`az login`)
-
 ### Setup
 
-1. **Create Azure Resources** - See [SETUP.md](SETUP.md) for step-by-step instructions
-
-2. **Configure appsettings.json**
-   
-   Edit [src/appsettings.json](src/appsettings.json) and replace the placeholder values:
-   ```json
-   {
-     "AzureOpenAI": {
-       "Endpoint": "https://your-resource.openai.azure.com/",
-       "DeploymentName": "gpt-4o",
-       "ApiVersion": "2025-01-01-preview",
-       "SystemInstructions": "Your system instructions here"
-     },
-     "CosmosDB": {
-       "Endpoint": "https://your-resource.documents.azure.com:443/",
-       "AccountKey": "your-account-key"
-     }
-   }
+1. **Clone and navigate to the project**
+   ```bash
+   git clone <repository-url>
+   cd MicrosoftAgentSDKDemo
    ```
-   
-   **Note:** Authentication uses `AzureCliCredential` (requires `az login`). AccountKey is needed for Cosmos DB.
 
-3. **Run**
-   ```powershell
+2. **Login to Azure**
+   ```bash
+   az login
+   ```
+   Ensure your account has `Cognitive Services OpenAI User` role on the Azure OpenAI resource.
+
+3. **Configure the application**
+   ```bash
    cd src
+   cp appsettings.json.sample appsettings.json
+   ```
+   Edit `appsettings.json` with your Azure resource details:
+   - `AzureOpenAI:Endpoint` - Your Azure OpenAI endpoint URL
+   - `AzureOpenAI:DeploymentName` - Your GPT-4o deployment name
+   - `CosmosDB:Endpoint` - Your Cosmos DB account endpoint
+   - `CosmosDB:AccountKey` - Your Cosmos DB account key
+
+4. **Create Cosmos DB resources**
+   
+   Create a database `agent-database` and container `conversations` with partition key `/id`
+
+5. **Build and run**
+   ```bash
+   dotnet build
    dotnet run
    ```
 
-## CLI Usage
+## Usage
+
+- Enter your username to start a session
+- Use **arrow keys** to navigate the thread selection menu
+- Select **"📝 Start a new conversation"** to begin
+- Ask questions about Azure (the agent has access to Microsoft Learn docs)
+- Type `quit` in chat to return to thread menu
+- Select **"🚪 Logout"** at thread menu to switch users
+
+### Example Session
 
 ```
-Enter your username: Alice
+╭─────────────────────────────────────╮
+│                                     │
+│    _                    _           │
+│   / \   __ _  ___ _ __ | |_         │
+│  / _ \ / _` |/ _ \ '_ \| __|        │
+│ / ___ \ (_| |  __/ | | | |_         │
+│/_/   \_\__, |\___|_| |_|\__|        │
+│        |___/                        │
+│   ____  ____  _  __                 │
+│  / ___||  _ \| |/ /                 │
+│  \___ \| | | | ' /                  │
+│   ___) | |_| | . \                  │
+│  |____/|____/|_|\_\                 │
+│   ____                              │
+│  |  _ \  ___ _ __ ___   ___         │
+│  | | | |/ _ \ '_ ` _ \ / _ \        │
+│  | |_| |  __/ | | | | | (_) |       │
+│  |____/ \___|_| |_| |_|\___/        │
+│                                     │
+╰─────────────────────────────────────╯
 
-Select a thread:
-  1. [NEW] - Start a new conversation
-  2. Previous thread name
-  3. [QUIT] - Exit the application
+Enter your username: Howard
 
-Enter thread number: 1
-First message: What is Azure?
-(Agent responds and thread loads)
+────────── Howard's Conversation Threads ──────────
 
-Alice [What is Azure?]> Tell me more about managed identities
-(Continue conversation)
-
-Alice [What is Azure?]> /quit
-(Returns to thread selection)
+  ↑↓ Select an option:
+  > 📝 Start a new conversation
+    💬 what is azure sql
+    💬 how does Fabric Spark compare to Databricks Spark?
+    🚪 Logout
 ```
-
-## Architecture
-
-- **ChatAgent** - Orchestrates conversations with Azure OpenAI, loads system instructions
-- **ThreadManager** - Manages thread and message storage in Cosmos DB
-- **TelemetryService** - Logs all interactions to Application Insights
-- **CLI Interface** - Menu-driven thread selection and chat
-
-All messages and full conversation context are persisted and logged.
 
 ## Project Structure
 
 ```
 src/
-├── Program.cs                        # CLI entry point and DI setup
-├── appsettings.json                 # Configuration with system instructions
-├── MicrosoftAgentSDKDemo.csproj      # .NET 8.0 project file
-├── Models/
-│   └── ThreadDocument.cs             # Thread with embedded messages
-└── Services/
-    ├── ChatAgent.cs                  # Azure OpenAI orchestration
-    ├── ThreadManager.cs              # Cosmos DB CRUD operations
-    └── TelemetryService.cs           # Application Insights events
+├── Program.cs                          # Main application entry point
+├── Services/
+│   ├── ChatAgent.cs                    # Azure OpenAI agent factory
+│   ├── ConsoleUI.cs                    # Spectre.Console UI implementation
+│   ├── MCPServerManager.cs             # MCP server connection manager
+│   ├── CosmosDbAgentThreadStore.cs     # Thread persistence layer
+│   └── CosmosDbChatMessageStore.cs     # Message persistence layer
+├── appsettings.json                    # Configuration (not in source control)
+└── appsettings.json.sample             # Sample configuration template
 ```
 
 ## Configuration
 
-See [SETUP.md](SETUP.md) for:
-- Detailed Azure resource setup
-- Connection string configuration
-- System instructions setup
-- Telemetry and monitoring
-- Production deployment guidelines
-- Security best practices
+See `appsettings.json.sample` for a complete configuration template. The application uses:
+- **Azure CLI authentication** for Azure OpenAI (requires `az login` and `Cognitive Services OpenAI User` role)
+- **Account key** for Cosmos DB
 
-## Key Files
+Key settings in `appsettings.json`:
+```json
+{
+  "AzureOpenAI": {
+    "Endpoint": "https://your-openai.cognitiveservices.azure.com",
+    "DeploymentName": "gpt-4o"
+  },
+  "CosmosDB": {
+    "Endpoint": "https://your-cosmos.documents.azure.com:443/",
+    "AccountKey": "your-cosmos-key",
+    "DatabaseName": "agent-database",
+    "ContainerId": "conversations"
+  }
+}
+```
 
-| File | Purpose |
-|------|---------|
-| [README.md](README.md) | This quick start guide |
-| [SETUP.md](SETUP.md) | Complete setup and configuration guide |
-| [src/Program.cs](src/Program.cs) | CLI entry point and dependency injection |
-| [src/Services/ChatAgent.cs](src/Services/ChatAgent.cs) | Agent logic and OpenAI integration |
-| [src/Services/ThreadManager.cs](src/Services/ThreadManager.cs) | Thread and message persistence |
-| [src/Services/TelemetryService.cs](src/Services/TelemetryService.cs) | Application Insights integration |
+## Architecture
 
-## Telemetry
+Built on the Microsoft Agent Framework with:
+- **AIHostAgent** - Wraps base agents with automatic thread persistence
+- **CosmosDbAgentThreadStore** - Custom thread store using IStorage interface
+- **CosmosDbChatMessageStore** - Custom message store for conversation history
+- **MCP Integration** - Model Context Protocol for external tool access (Microsoft Learn)
+- **Spectre.Console** - Rich terminal UI with interactive menus
 
-All interactions are logged to Application Insights including:
-- User messages (full content)
-- Agent responses (full content, tokens, latency)
-- Thread creation and switching
-- Session start/end times
-- Errors and exceptions
+For detailed architecture documentation, see [.github/copilot-instructions.md](.github/copilot-instructions.md)
 
-View logs in Azure Portal under Application Insights → Logs
+## Documentation
+
+- [.github/copilot-instructions.md](.github/copilot-instructions.md) - Comprehensive technical documentation
+  - Architecture overview
+  - Storage patterns
+  - Critical patterns and conventions
+  - Testing checklist
+  - Common tasks and troubleshooting
+
+## Technologies
+
+- [Microsoft.Agents.AI](https://www.nuget.org/packages/Microsoft.Agents.AI) v1.0.0-preview - Agent framework
+- [Microsoft.Agents.AI.Hosting](https://www.nuget.org/packages/Microsoft.Agents.AI.Hosting) v1.0.0-preview - AIHostAgent wrapper
+- [Azure.AI.OpenAI](https://www.nuget.org/packages/Azure.AI.OpenAI) v2.1.0 - Azure OpenAI integration
+- [ModelContextProtocol.Core](https://www.nuget.org/packages/ModelContextProtocol.Core) v0.2.0-preview.3 - MCP SDK
+- [Spectre.Console](https://spectreconsole.net/) v0.54.0 - Rich terminal UI
+- [Microsoft.Agents.Storage.CosmosDb](https://www.nuget.org/packages/Microsoft.Agents.Storage.CosmosDb) v1.3.176 - Cosmos DB storage
 
 ## Troubleshooting
 
-Common issues and solutions are documented in [SETUP.md](SETUP.md#troubleshooting)
+**Authentication**: Run `az login` and verify with `az account show`. Ensure you have `Cognitive Services OpenAI User` role.
 
-Quick checks:
-1. Verify Azure resources exist: `az resource list --query "[].name"`
-2. Test authentication: `az account show`
-3. Check appsettings.json has correct endpoint and account key
-4. Ensure Cosmos DB container exists with correct partition key
+**Cosmos DB**: Verify container `conversations` exists with partition key `/id` and account key is correct.
 
-## Next Steps
+**MCP Connection**: Requires internet access to https://learn.microsoft.com/api/mcp
 
-1. Review [SETUP.md](SETUP.md) for detailed configuration
-2. Create Azure resources using the provided Azure CLI commands
-3. Edit src/appsettings.json with your connection strings
-4. Run `dotnet run` in the src directory
-5. Start chatting with the agent!
-
-## Support
-
-For detailed information, refer to [SETUP.md](SETUP.md) which includes:
-- Step-by-step Azure resource setup
-- Troubleshooting guide
-- Production deployment guidelines
-- Security best practices
-- Resource links and documentation
+For detailed troubleshooting, see [SETUP.md](SETUP.md).
 
 ## License
 
-MIT License
+This is a demonstration project for educational purposes.

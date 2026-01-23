@@ -9,6 +9,74 @@ This is a console-based AI agent application built with the Microsoft Agent Fram
 - Cosmos DB storage for conversation history and thread metadata
 - Rich terminal UI using Spectre.Console
 
+## Getting Started
+
+### Prerequisites
+
+1. **.NET 8.0 SDK** - Install from https://dotnet.microsoft.com/download
+2. **Azure CLI** - Install from https://docs.microsoft.com/cli/azure/install-azure-cli
+3. **Azure Subscription** with the following resources:
+   - Azure OpenAI Service with GPT-4o deployment
+   - Azure Cosmos DB account
+   - (Optional) Application Insights for telemetry
+
+### Initial Setup
+
+1. **Clone the repository** and navigate to the project directory
+
+2. **Configure Azure CLI Authentication**
+   ```bash
+   az login
+   ```
+   Ensure you have access to the Azure OpenAI resource
+
+3. **Create appsettings.json**
+   ```bash
+   cd src
+   cp appsettings.json.sample appsettings.json
+   ```
+
+4. **Update appsettings.json** with your Azure resource details:
+   - `AzureOpenAI:Endpoint` - Your Azure OpenAI endpoint URL
+   - `AzureOpenAI:DeploymentName` - Your GPT-4o deployment name
+   - `CosmosDB:Endpoint` - Your Cosmos DB account endpoint
+   - `CosmosDB:AccountKey` - Your Cosmos DB account key
+   - `ApplicationInsights:InstrumentationKey` - (Optional) Your Application Insights key
+
+5. **Create Cosmos DB Database and Container**
+   
+   The application requires a Cosmos DB container with these settings:
+   - Database Name: `agent-database` (or as configured in appsettings.json)
+   - Container Name: `conversations`
+   - Partition Key: `/id`
+   
+   You can create this via Azure Portal, Azure CLI, or the first run will create it automatically.
+
+6. **Verify Azure RBAC Permissions**
+   
+   Ensure your Azure CLI login has the following roles on the Azure OpenAI resource:
+   - `Cognitive Services OpenAI User` or
+   - `Cognitive Services OpenAI Contributor`
+
+### Build and Run
+
+```bash
+# Build the project
+dotnet build
+
+# Run the application
+dotnet run
+```
+
+### First Run Experience
+
+1. Enter a username when prompted
+2. Select "Start a new conversation"
+3. Ask a question about Azure (e.g., "what is azure sql")
+4. The agent will use MCP tools to search Microsoft Learn documentation
+5. Type `quit` to return to thread selection
+6. Type `quit` again at thread selection to logout
+
 ## Architecture
 
 ### Core Framework
