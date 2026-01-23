@@ -51,19 +51,25 @@ var agentFactory = host.Services.GetRequiredService<IAgentFactory>();
 
 logger.LogInformation("Application started | Framework: Microsoft Agent Framework");
 
-// Get username
-var username = await consoleUI.GetUsernameAsync();
-var sessionStart = DateTime.UtcNow;
-logger.LogInformation("Session started | UserId: {UserId}", username);
+bool shouldExitApp = false;
 
-bool shouldExit = false;
-
-while (!shouldExit)
+// Main application loop - allows multiple users to log in sequentially
+while (!shouldExitApp)
 {
-    try
+    // Get username
+    var username = await consoleUI.GetUsernameAsync();
+    var sessionStart = DateTime.UtcNow;
+    logger.LogInformation("Session started | UserId: {UserId}", username);
+
+    bool shouldLogout = false;
+
+    // User session loop
+    while (!shouldLogout)
     {
-        // Get user's threads with metadata
-        var threads = await threadStore.GetUserThreadsAsync(username, limit: 10);
+        try
+        {
+            // Get user's threads with metadata
+            var threads = await threadStore.GetUserThreadsAsync(username, limit: 10);
         var selection = await consoleUI.GetThreadSelectionAsync(threads, username);
 
         if (selection.Type == ThreadSelectionType.Exit)
@@ -71,7 +77,7 @@ while (!shouldExit)
             consoleUI.DisplayGoodbye();
             var sessionDuration = DateTime.UtcNow - sessionStart;
             logger.LogInformation("Session ended | UserId: {UserId} | Duration: {DurationMs}ms", username, sessionDuration.TotalMilliseconds);
-            shouldExit = true;
+            shouldLogout = true;
             continue;
         }
 
@@ -157,10 +163,13 @@ while (!shouldExit)
     }
     catch (Exception ex)
     {
-        logger.LogError(ex, "Error in main loop");
-        consoleUI.DisplayError(ex.Message);
+        logger.LogError(ex, "Unexpected error in session loop | UserId: {UserId}", username);
+        consoleUI.DisplayError("An unexpected error occurred. Please try again.");
+    }
     }
 }
+
+logger.LogInformation("Application exiting");
 
 await host.RunAsync();
 
