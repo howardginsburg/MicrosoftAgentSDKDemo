@@ -1,27 +1,24 @@
 using Microsoft.Extensions.Logging;
-using MicrosoftAgentSDKDemo.Models;
 
 namespace MicrosoftAgentSDKDemo.Services;
 
 /// <summary>
 /// Handles console-based user interface for thread selection and chat interactions.
-/// Separated from business logic to maintain clean architecture.
 /// </summary>
 public interface IConsoleUI
 {
     Task<string> GetUsernameAsync();
-    Task<ThreadSelection> GetThreadSelectionAsync(List<ThreadDocument> userThreads, string username);
+    Task<ThreadSelection> GetThreadSelectionAsync(List<string> threadIds, string username);
     Task<string?> GetFirstMessageAsync();
-    Task<string?> GetChatInputAsync(string username, string threadName);
-    void DisplayThreadCreated(string threadName, string threadId);
-    void DisplayThreadLoaded(string threadName);
-    void DisplayConversationHistory(string username, List<Message> messages);
+    Task<string?> GetChatInputAsync(string username);
+    void DisplayThreadCreated(string threadId);
+    void DisplayThreadLoaded(string threadId);
     void DisplayAgentResponse(string response);
     void DisplayError(string message);
     void DisplayGoodbye();
 }
 
-public record ThreadSelection(ThreadSelectionType Type, ThreadDocument? Thread = null, string? FirstMessage = null);
+public record ThreadSelection(ThreadSelectionType Type, string? ThreadId = null, string? FirstMessage = null);
 
 public enum ThreadSelectionType
 {
@@ -45,17 +42,17 @@ public class ConsoleUI : IConsoleUI
         return await Task.FromResult(Console.ReadLine() ?? "User");
     }
 
-    public async Task<ThreadSelection> GetThreadSelectionAsync(List<ThreadDocument> userThreads, string username)
+    public async Task<ThreadSelection> GetThreadSelectionAsync(List<string> threadIds, string username)
     {
         Console.WriteLine("\nSelect a thread:");
         Console.WriteLine("  1. [NEW] - Start a new conversation");
         
-        for (int i = 0; i < userThreads.Count; i++)
+        for (int i = 0; i < threadIds.Count; i++)
         {
-            Console.WriteLine($"  {i + 2}. {userThreads[i].ThreadName}");
+            Console.WriteLine($"  {i + 2}. Thread {threadIds[i]}");
         }
         
-        Console.WriteLine($"  {userThreads.Count + 2}. [QUIT] - Exit the application");
+        Console.WriteLine($"  {threadIds.Count + 2}. [QUIT] - Exit the application");
         
         Console.Write("\nEnter thread number: ");
         var selection = Console.ReadLine() ?? string.Empty;
@@ -71,13 +68,13 @@ public class ConsoleUI : IConsoleUI
             var firstMessage = await GetFirstMessageAsync();
             return new ThreadSelection(ThreadSelectionType.New, FirstMessage: firstMessage);
         }
-        else if (index > 1 && index < userThreads.Count + 2)
+        else if (index > 1 && index < threadIds.Count + 2)
         {
             // Existing thread
-            var selectedThread = userThreads[index - 2];
-            return new ThreadSelection(ThreadSelectionType.Existing, Thread: selectedThread);
+            var selectedThreadId = threadIds[index - 2];
+            return new ThreadSelection(ThreadSelectionType.Existing, ThreadId: selectedThreadId);
         }
-        else if (index == userThreads.Count + 2)
+        else if (index == threadIds.Count + 2)
         {
             // Exit
             return new ThreadSelection(ThreadSelectionType.Exit);
@@ -92,42 +89,21 @@ public class ConsoleUI : IConsoleUI
         return await Task.FromResult(Console.ReadLine());
     }
 
-    public async Task<string?> GetChatInputAsync(string username, string threadName)
+    public async Task<string?> GetChatInputAsync(string username)
     {
         Console.WriteLine();
-        var prompt = $"{username} [{threadName}]> ";
-        Console.Write(prompt);
+        Console.Write($"{username}> ");
         return await Task.FromResult(Console.ReadLine());
     }
 
-    public void DisplayThreadCreated(string threadName, string threadId)
+    public void DisplayThreadCreated(string threadId)
     {
-        Console.WriteLine($"\nCreated new thread: {threadName} (ID: {threadId})\n");
+        Console.WriteLine($"\nCreated new thread (ID: {threadId})\n");
     }
 
-    public void DisplayThreadLoaded(string threadName)
+    public void DisplayThreadLoaded(string threadId)
     {
-        Console.WriteLine($"\nLoaded thread: {threadName}\n");
-    }
-
-    public void DisplayConversationHistory(string username, List<Message> messages)
-    {
-        if (messages.Count == 0)
-            return;
-
-        Console.WriteLine("--- Conversation History ---");
-        foreach (var msg in messages)
-        {
-            if (msg.Role == "user")
-            {
-                Console.WriteLine($"{username}: {msg.Content}");
-            }
-            else if (msg.Role == "assistant")
-            {
-                Console.WriteLine($"Agent: {msg.Content}");
-            }
-        }
-        Console.WriteLine("--- End of History ---\n");
+        Console.WriteLine($"\nLoaded thread (ID: {threadId})\n");
     }
 
     public void DisplayAgentResponse(string response)

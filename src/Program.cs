@@ -4,6 +4,9 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Agents.AI;
+using Microsoft.Agents.AI.Hosting;
+using Microsoft.Agents.Storage;
+using Microsoft.Agents.Storage.CosmosDb;
 using MicrosoftAgentSDKDemo.Services;
 
 var host = Host.CreateDefaultBuilder(args)
@@ -16,18 +19,34 @@ var host = Host.CreateDefaultBuilder(args)
     })
     .ConfigureServices((context, services) =>
     {
-        // Register Agent Framework and persistence services
-        services.AddSingleton<IThreadManager, ThreadManager>();
+        // Configure Cosmos DB Storage using framework's IStorage
+        var cosmosConfig = context.Configuration.GetSection("CosmosDB");
+        var endpoint = cosmosConfig["Endpoint"] ?? throw new InvalidOperationException("CosmosDB Endpoint not configured");
+        var accountKey = cosmosConfig["AccountKey"] ?? throw new InvalidOperationException("CosmosDB AccountKey not configured");
+        var databaseName = cosmosConfig["DatabaseName"] ?? "agent-database";
+        var containerId = cosmosConfig["ContainerId"] ?? "conversations";
+
+        services.AddSingleton<IStorage>(sp =>
+            new CosmosDbPartitionedStorage(
+                new CosmosDbPartitionedStorageOptions
+                {
+                    CosmosDbEndpoint = endpoint,
+                    AuthKey = accountKey,
+                    DatabaseId = databaseName,
+                    ContainerId = containerId
+                }));
+
+        // Register Agent Framework services
+        services.AddSingleton<CosmosDbAgentThreadStore>();
         services.AddSingleton<IMCPServerManager, MCPServerManager>();
         services.AddSingleton<IAgentFactory, ChatAgentFactory>();
-        services.AddSingleton<ThreadTools>();
         services.AddSingleton<IConsoleUI, ConsoleUI>();
     })
     .Build();
 
 var logger = host.Services.GetRequiredService<ILogger<Program>>();
 var consoleUI = host.Services.GetRequiredService<IConsoleUI>();
-var threadManager = host.Services.GetRequiredService<IThreadManager>();
+var threadStore = host.Services.GetRequiredService<CosmosDbAgentThreadStore>();
 var agentFactory = host.Services.GetRequiredService<IAgentFactory>();
 
 logger.LogInformation("Application started | Framework: Microsoft Agent Framework");
@@ -41,14 +60,11 @@ bool shouldExit = false;
 
 while (!shouldExit)
 {
-    string? currentThreadId = null;
-    string? currentThreadName = null;
-
     try
     {
-        // Get user threads and display selection menu
-        var userThreads = await threadManager.GetUserThreadsAsync(username, limit: 10);
-        var selection = await consoleUI.GetThreadSelectionAsync(userThreads, username);
+        // Get user's thread IDs
+        var threadIds = await threadStore.GetUserThreadIdsAsync(username, limit: 10);
+        var selection = await consoleUI.GetThreadSelectionAsync(threadIds, username);
 
         if (selection.Type == ThreadSelectionType.Exit)
         {
@@ -59,45 +75,54 @@ while (!shouldExit)
             continue;
         }
 
+        // Create base agent
+        var baseAgent = await agentFactory.CreateAgentAsync(username);
+        
+        // Wrap with AIHostAgent for automatic thread persistence
+        var agent = new AIHostAgent(baseAgent, threadStore);
+
+        AgentThread? thread = null;
+        string? threadId = null;
+
         if (selection.Type == ThreadSelectionType.New && !string.IsNullOrWhiteSpace(selection.FirstMessage))
         {
             // Create new thread
-            currentThreadId = await threadManager.CreateThreadAsync(username, selection.FirstMessage);
-            var thread = await threadManager.GetThreadAsync(username, currentThreadId);
-            currentThreadName = thread?.ThreadName ?? "New Thread";
+            thread = await agent.GetNewThreadAsync();
+            threadId = Guid.NewGuid().ToString();
             
-            consoleUI.DisplayThreadCreated(currentThreadName, currentThreadId);
+            // Save thread and add to user index
+            await threadStore.SaveThreadAsync(agent, threadId, thread);
+            await threadStore.AddThreadToUserIndexAsync(username, threadId);
+            
+            consoleUI.DisplayThreadCreated(threadId);
 
-            // Create agent for this user
-            var agent = await agentFactory.CreateAgentAsync(username);
-            
-            // Send first message through the agent
-            await threadManager.SaveMessageAsync(username, currentThreadId, "user", selection.FirstMessage);
-            var agentResponse = await agent.RunAsync(selection.FirstMessage);
-            await threadManager.SaveMessageAsync(username, currentThreadId, "assistant", agentResponse.Text);
-            
-            consoleUI.DisplayAgentResponse(agentResponse.Text);
+            // Send first message
+            var response = await agent.RunAsync(selection.FirstMessage, thread);
+            consoleUI.DisplayAgentResponse(response.Text);
         }
-        else if (selection.Type == ThreadSelectionType.Existing && selection.Thread != null)
+        else if (selection.Type == ThreadSelectionType.Existing && selection.ThreadId != null)
         {
             // Load existing thread
-            currentThreadId = selection.Thread.Id;
-            currentThreadName = selection.Thread.ThreadName;
+            threadId = selection.ThreadId;
             
-            logger.LogInformation("Thread switched | UserId: {UserId} | ThreadId: {ThreadId} | ThreadName: {ThreadName}", 
-                username, currentThreadId, currentThreadName);
-            consoleUI.DisplayThreadLoaded(currentThreadName);
-            consoleUI.DisplayConversationHistory(username, selection.Thread.Messages);
+            try
+            {
+                thread = await threadStore.GetThreadAsync(agent, threadId);
+                consoleUI.DisplayThreadLoaded(threadId);
+            }
+            catch (InvalidOperationException)
+            {
+                consoleUI.DisplayError($"Thread {threadId} not found");
+                continue;
+            }
         }
 
         // Chat loop for selected thread
-        if (currentThreadId != null)
+        if (thread != null && threadId != null)
         {
-            var agent = await agentFactory.CreateAgentAsync(username);
-            
             while (true)
             {
-                var input = await consoleUI.GetChatInputAsync(username, currentThreadName ?? "");
+                var input = await consoleUI.GetChatInputAsync(username);
 
                 if (string.IsNullOrWhiteSpace(input))
                     continue;
@@ -110,18 +135,15 @@ while (!shouldExit)
 
                 try
                 {
-                    logger.LogDebug("Processing message | UserId: {UserId} | ThreadId: {ThreadId}", username, currentThreadId);
+                    logger.LogDebug("Processing message | UserId: {UserId} | ThreadId: {ThreadId}", username, threadId);
                     
-                    // Save user message to thread
-                    await threadManager.SaveMessageAsync(username, currentThreadId, "user", input);
+                    // Send message through agent - framework handles conversation history
+                    var response = await agent.RunAsync(input, thread);
                     
-                    // Send message through agent - framework will handle tool calls automatically
-                    var agentResponse = await agent.RunAsync(input);
+                    // Explicitly save thread after each interaction to persist conversation history
+                    await threadStore.SaveThreadAsync(agent, threadId, thread);
                     
-                    // Save assistant response to thread
-                    await threadManager.SaveMessageAsync(username, currentThreadId, "assistant", agentResponse.Text);
-                    
-                    consoleUI.DisplayAgentResponse(agentResponse.Text);
+                    consoleUI.DisplayAgentResponse(response.Text);
                 }
                 catch (Exception ex)
                 {

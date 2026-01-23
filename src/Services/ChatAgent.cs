@@ -1,6 +1,8 @@
 using Azure.AI.OpenAI;
 using Azure.Identity;
 using Microsoft.Agents.AI;
+using Microsoft.Agents.Storage;
+using Microsoft.Agents.Storage.CosmosDb;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
@@ -18,19 +20,22 @@ public interface IAgentFactory
 public class ChatAgentFactory : IAgentFactory
 {
     private readonly IConfiguration _configuration;
-    private readonly IThreadManager _threadManager;
     private readonly IMCPServerManager _mcpServerManager;
+    private readonly IStorage _storage;
+    private readonly ILoggerFactory _loggerFactory;
     private readonly ILogger<ChatAgentFactory> _logger;
 
     public ChatAgentFactory(
         IConfiguration configuration,
-        IThreadManager threadManager,
         IMCPServerManager mcpServerManager,
+        IStorage storage,
+        ILoggerFactory loggerFactory,
         ILogger<ChatAgentFactory> logger)
     {
         _configuration = configuration;
-        _threadManager = threadManager;
         _mcpServerManager = mcpServerManager;
+        _storage = storage;
+        _loggerFactory = loggerFactory;
         _logger = logger;
     }
 
@@ -57,14 +62,27 @@ public class ChatAgentFactory : IAgentFactory
             _logger.LogWarning("No MCP tools available - agent will run without external tool access");
         }
 
-        // Create agent with MCP tools
+        // Create agent with MCP tools and chat message store for persistence
+        var chatOptions = new ChatOptions
+        {
+            Instructions = systemInstructions,
+            Tools = mcpTools.ToArray()
+        };
+
         var agent = azureOpenAIClient
             .GetChatClient(deploymentName)
             .AsIChatClient()
-            .AsAIAgent(
-                instructions: systemInstructions,
-                name: $"Agent-{userId}",
-                tools: mcpTools.ToArray());
+            .AsAIAgent(new ChatClientAgentOptions
+            {
+                Name = $"Agent-{userId}",
+                ChatOptions = chatOptions,
+                ChatMessageStoreFactory = (ctx, ct) => new ValueTask<ChatMessageStore>(
+                    new CosmosDbChatMessageStore(
+                        _storage,
+                        ctx.SerializedState,
+                        _loggerFactory.CreateLogger<CosmosDbChatMessageStore>(),
+                        ctx.JsonSerializerOptions))
+            });
 
         _logger.LogDebug("AIAgent created | UserId: {UserId} | Deployment: {DeploymentName} | ToolCount: {ToolCount}",
             userId, deploymentName, mcpTools.Count);
