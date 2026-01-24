@@ -95,10 +95,18 @@ public class ChatAgentFactory : IAgentFactory
             Tools = allTools.ToArray()
         };
 
-        var agent = azureOpenAIClient
+        // Create base chat client
+        var baseChatClient = azureOpenAIClient
             .GetChatClient(deploymentName)
-            .AsIChatClient()
-            .AsAIAgent(new ChatClientAgentOptions
+            .AsIChatClient();
+
+        // Wrap with reasoning display client to show agent thinking process
+        var reasoningClient = new ReasoningChatClient(
+            baseChatClient,
+            _loggerFactory.CreateLogger<ReasoningChatClient>());
+
+        // Convert to agent with chat message store for persistence
+        var agent = reasoningClient.AsAIAgent(new ChatClientAgentOptions
             {
                 Name = $"Agent-{userId}",
                 ChatOptions = chatOptions,
