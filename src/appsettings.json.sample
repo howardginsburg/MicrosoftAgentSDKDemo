@@ -19,6 +19,8 @@
   "AzureOpenAI": {
     "Endpoint": "https://your-openai-resource.cognitiveservices.azure.com",
     "DeploymentName": "gpt-4o",
+    "DallEEndpoint": "https://your-dalle-resource.cognitiveservices.azure.com",
+    "DallEDeploymentName": "dall-e-3",
     "SystemInstructionsFile": "prompts/system-instructions.txt"
   },
   "CosmosDB": {

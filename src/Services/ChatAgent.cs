@@ -24,19 +24,22 @@ public class ChatAgentFactory : IAgentFactory
     private readonly IStorage _storage;
     private readonly ILoggerFactory _loggerFactory;
     private readonly ILogger<ChatAgentFactory> _logger;
+    private readonly IImageGenerationService _imageService;
 
     public ChatAgentFactory(
         IConfiguration configuration,
         IMCPServerManager mcpServerManager,
         IStorage storage,
         ILoggerFactory loggerFactory,
-        ILogger<ChatAgentFactory> logger)
+        ILogger<ChatAgentFactory> logger,
+        IImageGenerationService imageService)
     {
         _configuration = configuration;
         _mcpServerManager = mcpServerManager;
         _storage = storage;
         _loggerFactory = loggerFactory;
         _logger = logger;
+        _imageService = imageService;
     }
 
     public async Task<AIAgent> CreateAgentAsync(string userId)
@@ -71,11 +74,25 @@ public class ChatAgentFactory : IAgentFactory
             _logger.LogWarning("No MCP tools available - agent will run without external tool access");
         }
 
-        // Create agent with MCP tools and chat message store for persistence
+        // Create image generation tool
+        var imageGenerationTool = AIFunctionFactory.Create(
+            async (string prompt, string size = "1024x1024", string quality = "standard") =>
+            {
+                var result = await _imageService.GenerateImageAsync(prompt, size, quality);
+                // Return a structured message that includes BOTH the success message AND the path
+                return $"[IMAGE_GENERATED]Saved to: {result.LocalPath}[/IMAGE_GENERATED]";
+            },
+            name: "generate_image",
+            description: "Generates an image based on a text prompt using DALL-E. Use this when the user asks to create, generate, or draw an image.");
+
+        // Combine all tools
+        var allTools = new List<AITool>(mcpTools) { imageGenerationTool };
+
+        // Create agent with all tools and chat message store for persistence
         var chatOptions = new ChatOptions
         {
             Instructions = systemInstructions,
-            Tools = mcpTools.ToArray()
+            Tools = allTools.ToArray()
         };
 
         var agent = azureOpenAIClient
@@ -95,7 +112,7 @@ public class ChatAgentFactory : IAgentFactory
             });
 
         _logger.LogDebug("AIAgent created | UserId: {UserId} | Deployment: {DeploymentName} | ToolCount: {ToolCount}",
-            userId, deploymentName, mcpTools.Count);
+            userId, deploymentName, allTools.Count);
         
         return agent;
     }

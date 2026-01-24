@@ -53,6 +53,7 @@
     <!-- Model Context Protocol SDK -->
     <PackageReference Include="ModelContextProtocol.Core" Version="0.2.0-preview.3" />
     <PackageReference Include="Spectre.Console" Version="0.54.0" />
+    <PackageReference Include="Spectre.Console.ImageSharp" Version="0.54.0" />
   </ItemGroup>
 
 </Project>

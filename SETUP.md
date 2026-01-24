@@ -74,11 +74,17 @@ Cosmos DB container `conversations` with partition key `/id` contains:
 
 You'll need the following Azure resources (created before running the app):
 
-1. **Azure OpenAI Service**
+1. **Azure OpenAI Service (for GPT-4o)**
    - Resource name: `{your-resource-name}`
    - Deployment: `gpt-4o` (or your preferred model)
-   - Endpoint: `https://{your-resource-name}.openai.azure.com/`
+   - Endpoint: `https://{your-resource-name}.cognitiveservices.azure.com`
    - Region: East US, France Central, or other available regions
+
+2. **Azure OpenAI Service (for DALL-E 3)**
+   - Can be same resource as above or separate
+   - Deployment: `dall-e-3`
+   - Endpoint: `https://{your-dalle-resource}.cognitiveservices.azure.com`
+   - Region: Must support DALL-E (e.g., Sweden Central, East US)
 
 2. **Azure Cosmos DB Account**
    - Database: `agent-database`
@@ -128,6 +134,17 @@ az cognitiveservices account deployment create `
   --model-name gpt-4 `
   --model-version "turbo-2024-04-09" `
   --sku-name "standard" `
+  --sku-capacity 1
+
+# Deploy DALL-E 3 model (can be in same or different resource)
+az cognitiveservices account deployment create `
+  --name agent-demo-openai `
+  --resource-group $resourceGroup `
+  --deployment-name dall-e-3 `
+  --model-name dall-e-3 `
+  --model-version "3.0" `
+  --model-format OpenAI `
+  --sku-name "Standard" `
   --sku-capacity 1
 ```
 
@@ -239,7 +256,9 @@ Edit `appsettings.json`:
   "AzureOpenAI": {
     "Endpoint": "https://your-openai.cognitiveservices.azure.com",
     "DeploymentName": "gpt-4o",
-    "SystemInstructions": "You are a helpful AI assistant with access to Microsoft Learn documentation. Answer questions accurately and cite sources when possible."
+    "DallEEndpoint": "https://your-dalle-openai.cognitiveservices.azure.com",
+    "DallEDeploymentName": "dall-e-3",
+    "SystemInstructionsFile": "prompts/system-instructions.txt"
   },
   "CosmosDB": {
     "Endpoint": "https://your-cosmos.documents.azure.com:443/",
@@ -295,9 +314,28 @@ What would you like to talk about? Tell me about managed identities
 │ Managed identities are a feature of Azure...      │
 ╰────────────────────────────────────────────────────╯
 
+You> generate an image of an Azure architecture diagram
+
+🤔 Agent is thinking...
+
+╭──────── 🎨 Image Generated and Saved! ────────────╮
+│ C:\...\images\dalle_20260124_161103.png          │
+╰────────────────────────────────────────────────────╯
+[Image displayed in console with ANSI colors]
+[Image automatically opens in default viewer]
+
 You> quit
 (Returns to thread selection)
 ```
+
+### Image Generation
+
+The agent can generate images using DALL-E 3:
+- Simply ask the agent to "generate an image of..."
+- Images are saved to `src/images/` folder with timestamp filenames
+- Images display in the console with color preview (up to 80 characters wide)
+- Images automatically open in your default image viewer
+- Supported formats: PNG (1024x1024, 1024x1792, 1792x1024)
 
 ## MCP Integration
 
@@ -395,9 +433,12 @@ src/
 ├── MicrosoftAgentSDKDemo.csproj      # Project file with NuGet packages
 ├── prompts/
 │   └── system-instructions.txt       # Agent behavior instructions (edit to customize)
+├── images/                           # Generated DALL-E images (created automatically)
+│   └── dalle_YYYYMMDD_HHmmss.png     # Timestamped image files
 └── Services/
-    ├── ChatAgent.cs                  # Azure OpenAI agent factory
-    ├── ConsoleUI.cs                  # Spectre.Console UI implementation
+    ├── ChatAgent.cs                  # Azure OpenAI agent factory with image generation tool
+    ├── ImageGenerationService.cs     # DALL-E 3 image generation service
+    ├── ConsoleUI.cs                  # Spectre.Console UI with in-console image display
     ├── MCPServerManager.cs           # MCP server connection manager
     ├── CosmosDbAgentThreadStore.cs   # Thread metadata persistence
     └── CosmosDbChatMessageStore.cs   # Conversation message persistence

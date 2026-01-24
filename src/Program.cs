@@ -40,6 +40,7 @@ var host = Host.CreateDefaultBuilder(args)
         // Register Agent Framework services
         services.AddSingleton<CosmosDbAgentThreadStore>();
         services.AddSingleton<IMCPServerManager, MCPServerManager>();
+        services.AddSingleton<IImageGenerationService, AzureOpenAIImageService>();
         services.AddSingleton<IAgentFactory, ChatAgentFactory>();
         services.AddSingleton<IConsoleUI, ConsoleUI>();
     })
