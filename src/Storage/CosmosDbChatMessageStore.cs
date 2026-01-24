@@ -1,12 +1,11 @@
 using Microsoft.Agents.AI;
 using Microsoft.Agents.Storage;
-using Microsoft.Agents.Storage.CosmosDb;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace MicrosoftAgentSDKDemo.Services;
+namespace MicrosoftAgentSDKDemo.Storage;
 
 /// <summary>
 /// Chat message store implementation that persists messages to Cosmos DB using IStorage.

@@ -4,7 +4,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using OpenAI.Images;
 
-namespace MicrosoftAgentSDKDemo.Services;
+namespace MicrosoftAgentSDKDemo.Integration;
 
 /// <summary>
 /// Service for generating images using Azure OpenAI DALL-E

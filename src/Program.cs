@@ -7,7 +7,10 @@ using Microsoft.Agents.AI;
 using Microsoft.Agents.AI.Hosting;
 using Microsoft.Agents.Storage;
 using Microsoft.Agents.Storage.CosmosDb;
-using MicrosoftAgentSDKDemo.Services;
+using MicrosoftAgentSDKDemo.Agents;
+using MicrosoftAgentSDKDemo.Display;
+using MicrosoftAgentSDKDemo.Storage;
+using MicrosoftAgentSDKDemo.Integration;
 using Spectre.Console;
 
 var host = Host.CreateDefaultBuilder(args)

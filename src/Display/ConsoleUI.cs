@@ -2,7 +2,7 @@ using Microsoft.Extensions.Logging;
 using Spectre.Console;
 using System.Text.RegularExpressions;
 
-namespace MicrosoftAgentSDKDemo.Services;
+namespace MicrosoftAgentSDKDemo.Display;
 
 /// <summary>
 /// Handles console-based user interface for thread selection and chat interactions.

@@ -4,7 +4,7 @@ using Microsoft.Agents.AI.Hosting;
 using Microsoft.Agents.Storage;
 using Microsoft.Extensions.Logging;
 
-namespace MicrosoftAgentSDKDemo.Services;
+namespace MicrosoftAgentSDKDemo.Storage;
 
 public class ThreadMetadata
 {

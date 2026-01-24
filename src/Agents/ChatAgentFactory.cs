@@ -2,12 +2,14 @@ using Azure.AI.OpenAI;
 using Azure.Identity;
 using Microsoft.Agents.AI;
 using Microsoft.Agents.Storage;
-using Microsoft.Agents.Storage.CosmosDb;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using MicrosoftAgentSDKDemo.Display;
+using MicrosoftAgentSDKDemo.Integration;
+using MicrosoftAgentSDKDemo.Storage;
 
-namespace MicrosoftAgentSDKDemo.Services;
+namespace MicrosoftAgentSDKDemo.Agents;
 
 /// <summary>
 /// Factory for creating Azure OpenAI-based agents

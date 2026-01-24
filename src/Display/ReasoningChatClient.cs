@@ -3,7 +3,7 @@ using Microsoft.Extensions.Logging;
 using Spectre.Console;
 using System.Runtime.CompilerServices;
 
-namespace MicrosoftAgentSDKDemo.Services;
+namespace MicrosoftAgentSDKDemo.Display;
 
 /// <summary>
 /// Delegating chat client that displays agent reasoning and tool invocations to the console
