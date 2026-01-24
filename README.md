@@ -5,14 +5,15 @@ A console-based AI agent application built with the Microsoft Agent Framework, f
 ## Features
 
 - 🤖 **AI Agent powered by Azure OpenAI** - Uses GPT-4o for intelligent conversations
-- 🎨 **Image Generation** - DALL-E 3 integration for creating images with in-console preview
+- 🎨 **Image Generation** - DALL-E 3 integration for creating images
 - 📚 **MCP Integration** - Connects to Microsoft Learn documentation via Model Context Protocol
 - 💾 **Persistent Storage** - Conversation history stored in Azure Cosmos DB
 - 👥 **Multi-User Support** - Isolated conversations per user with data partitioning
-- 🖼️ **Rich Console UI** - Beautiful terminal interface with image display using Spectre.Console
+- 🖼️ **Rich Console UI** - Beautiful terminal interface with Spectre.Console
 - 🔄 **Thread Management** - Create, resume, and manage conversation threads
 - 📜 **Conversation History** - Full chat history displayed when loading threads
 - 💿 **Local Image Storage** - Generated images saved locally with automatic viewer launch
+- 🔧 **Tool Invocation Display** - See agent reasoning and MCP tool usage in real-time
 
 ## Prerequisites
 
@@ -112,13 +113,18 @@ Enter your username: Howard
 ```
 src/
 ├── Program.cs                          # Main application entry point
-├── Services/
-│   ├── ChatAgent.cs                    # Azure OpenAI agent factory with image generation tool
-│   ├── ImageGenerationService.cs       # DALL-E 3 image generation service
-│   ├── ConsoleUI.cs                    # Spectre.Console UI with in-console image display
-│   ├── MCPServerManager.cs             # MCP server connection manager
+├── Agents/
+│   └── ChatAgentFactory.cs             # Azure OpenAI agent factory with tools
+├── Display/
+│   ├── ConsoleUI.cs                    # Spectre.Console UI components
+│   └── ReasoningChatClient.cs          # Tool invocation display middleware
+├── Storage/
 │   ├── CosmosDbAgentThreadStore.cs     # Thread persistence layer
 │   └── CosmosDbChatMessageStore.cs     # Message persistence layer
+├── Integration/
+│   ├── MCPServerManager.cs             # MCP server connection manager
+│   └── ImageGenerationService.cs       # DALL-E 3 image generation service
+├── Models/                             # Data models
 ├── prompts/
 │   └── system-instructions.txt         # Agent behavior instructions
 ├── images/                             # Generated images (created automatically)
@@ -158,6 +164,7 @@ Built on the Microsoft Agent Framework with:
 - **AIHostAgent** - Wraps base agents with automatic thread persistence
 - **CosmosDbAgentThreadStore** - Custom thread store using IStorage interface
 - **CosmosDbChatMessageStore** - Custom message store for conversation history
+- **ReasoningChatClient** - DelegatingChatClient middleware that displays agent reasoning and tool invocations
 - **MCP Integration** - Model Context Protocol for external tool access (Microsoft Learn)
 - **Spectre.Console** - Rich terminal UI with interactive menus
 
@@ -178,7 +185,6 @@ For detailed architecture documentation, see [.github/copilot-instructions.md](.
 - [Microsoft.Agents.AI.Hosting](https://www.nuget.org/packages/Microsoft.Agents.AI.Hosting) v1.0.0-preview - AIHostAgent wrapper
 - [Azure.AI.OpenAI](https://www.nuget.org/packages/Azure.AI.OpenAI) v2.1.0 - Azure OpenAI integration (GPT-4o and DALL-E 3)
 - [ModelContextProtocol.Core](https://www.nuget.org/packages/ModelContextProtocol.Core) v0.2.0-preview.3 - MCP SDK
-- [Spectre.Console](https://spectreconsole.net/) v0.54.0 - Rich terminal UI
 - [Spectre.Console.ImageSharp](https://spectreconsole.net/) v0.54.0 - In-console image display
 - [Microsoft.Agents.Storage.CosmosDb](https://www.nuget.org/packages/Microsoft.Agents.Storage.CosmosDb) v1.3.176 - Cosmos DB storage
 

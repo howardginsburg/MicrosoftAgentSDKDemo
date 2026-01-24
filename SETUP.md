@@ -14,12 +14,13 @@ This is a .NET 8.0 console application that implements a multi-turn conversation
 
 ### Core Components
 
-1. **ChatAgent** (factory) - Creates Azure OpenAI agents with MCP tools and chat history
-2. **CosmosDbAgentThreadStore** - Manages thread metadata and user thread index
-3. **CosmosDbChatMessageStore** - Persists conversation messages
-4. **MCPServerManager** - Connects to Microsoft Learn MCP server
-5. **ConsoleUI** - Rich terminal interface with Spectre.Console
-6. **AIHostAgent** - Framework wrapper providing automatic persistence
+1. **ChatAgentFactory** (factory) - Creates Azure OpenAI agents with MCP tools and chat history
+2. **ReasoningChatClient** - Middleware that displays agent reasoning and tool invocations
+3. **CosmosDbAgentThreadStore** - Manages thread metadata and user thread index
+4. **CosmosDbChatMessageStore** - Persists conversation messages
+5. **MCPServerManager** - Connects to Microsoft Learn MCP server
+6. **ConsoleUI** - Rich terminal interface with Spectre.Console
+7. **AIHostAgent** - Framework wrapper providing automatic persistence
 
 ### Storage Architecture
 
@@ -314,6 +315,23 @@ What would you like to talk about? Tell me about managed identities
 │ Managed identities are a feature of Azure...      │
 ╰────────────────────────────────────────────────────╯
 
+You> tell me the difference between azure synapse and fabric
+
+🤔 Agent is thinking...
+
+💭 Analyzing request: tell me the difference between azure synapse and fabric
+
+🔧 Tool Invocations:
+╭───────────────────────┬─────────────────────────────────────────────────────╮
+│ Tool Name             │ Arguments                                           │
+├───────────────────────┼─────────────────────────────────────────────────────┤
+│ microsoft_docs_search │ query: Azure Synapse vs Microsoft Fabric comparison │
+╰───────────────────────┴─────────────────────────────────────────────────────╯
+
+╭──────────────────── 🤖 Agent ─────────────────────╮
+│ Azure Synapse and Microsoft Fabric...             │
+╰────────────────────────────────────────────────────╯
+
 You> generate an image of an Azure architecture diagram
 
 🤔 Agent is thinking...
@@ -321,8 +339,7 @@ You> generate an image of an Azure architecture diagram
 ╭──────── 🎨 Image Generated and Saved! ────────────╮
 │ C:\...\images\dalle_20260124_161103.png          │
 ╰────────────────────────────────────────────────────╯
-[Image displayed in console with ANSI colors]
-[Image automatically opens in default viewer]
+Opening image in default viewer...
 
 You> quit
 (Returns to thread selection)
@@ -333,9 +350,16 @@ You> quit
 The agent can generate images using DALL-E 3:
 - Simply ask the agent to "generate an image of..."
 - Images are saved to `src/images/` folder with timestamp filenames
-- Images display in the console with color preview (up to 80 characters wide)
 - Images automatically open in your default image viewer
 - Supported formats: PNG (1024x1024, 1024x1792, 1792x1024)
+
+### Tool Invocation Display
+
+The agent displays its reasoning process:
+- Shows when analyzing user requests
+- Displays a table of MCP tools being invoked (e.g., microsoft_docs_search)
+- Shows tool arguments being passed
+- Helps understand how the agent is researching and responding
 
 ## MCP Integration
 
@@ -428,13 +452,18 @@ dotnet build
 ```
 src/
 ├── Program.cs                        # Entry point with nested loop for multi-user sessions
-├── appsettings.json                  # Configuration (not in source control)
-├── appsettings.json.sample           # Sample configuration template
-├── MicrosoftAgentSDKDemo.csproj      # Project file with NuGet packages
-├── prompts/
-│   └── system-instructions.txt       # Agent behavior instructions (edit to customize)
-├── images/                           # Generated DALL-E images (created automatically)
-│   └── dalle_YYYYMMDD_HHmmss.png     # Timestamped image files
+├── Agents/
+│   └── ChatAgentFactory.cs           # Azure OpenAI agent factory with tools
+├── Display/
+│   ├── ConsoleUI.cs                  # Spectre.Console UI components
+│   └── ReasoningChatClient.cs        # Tool invocation display middleware
+├── Storage/
+│   ├── CosmosDbAgentThreadStore.cs   # Thread metadata persistence
+│   └── CosmosDbChatMessageStore.cs   # Conversation message persistence
+├── Integration/
+│   ├── MCPServerManager.cs           # MCP server connection manager
+│   └── ImageGenerationService.cs     # DALL-E 3 image generation service
+└── Models/                           # Data models and types
 └── Services/
     ├── ChatAgent.cs                  # Azure OpenAI agent factory with image generation tool
     ├── ImageGenerationService.cs     # DALL-E 3 image generation service
