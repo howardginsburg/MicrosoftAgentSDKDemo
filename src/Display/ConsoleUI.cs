@@ -239,22 +239,9 @@ public class ConsoleUI : IConsoleUI
         
         AnsiConsole.Write(panel);
         
-        // Display the image in the console
+        // Open in default viewer
         if (File.Exists(localPath))
         {
-            try
-            {
-                var canvasImage = new CanvasImage(localPath);
-                canvasImage.MaxWidth = 80; // Limit width for console display
-                AnsiConsole.Write(canvasImage);
-                AnsiConsole.WriteLine();
-            }
-            catch (Exception ex)
-            {
-                AnsiConsole.MarkupLine($"[dim]Could not display image in console: {ex.Message.EscapeMarkup()}[/]");
-            }
-            
-            // Also open in default viewer
             try
             {
                 System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
