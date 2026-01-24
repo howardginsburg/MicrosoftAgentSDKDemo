@@ -1,6 +1,8 @@
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using MicrosoftAgentSDKDemo.Models;
 using ModelContextProtocol.Client;
 
 namespace MicrosoftAgentSDKDemo.Integration;
@@ -8,64 +10,116 @@ namespace MicrosoftAgentSDKDemo.Integration;
 /// <summary>
 /// Manages MCP client connections and provides tools from MCP servers.
 /// Uses the official Model Context Protocol C# SDK.
+/// Supports multiple MCP servers configured via appsettings.json.
 /// </summary>
 public interface IMCPServerManager
 {
-    Task<IList<AITool>> GetMicrosoftLearnToolsAsync();
+    Task<IList<AITool>> GetToolsAsync();
     Task DisposeAsync();
 }
 
 public class MCPServerManager : IMCPServerManager
 {
     private readonly ILogger<MCPServerManager> _logger;
-    private IMcpClient? _mcpClient;
+    private readonly MCPServersConfiguration _configuration;
+    private readonly List<IMcpClient> _mcpClients = new();
 
-    public MCPServerManager(ILogger<MCPServerManager> logger)
+    public MCPServerManager(
+        ILogger<MCPServerManager> logger,
+        IConfiguration configuration)
     {
         _logger = logger;
+        
+        // Load MCP servers configuration
+        _configuration = new MCPServersConfiguration();
+        configuration.GetSection("MCPServers").Bind(_configuration);
+        
+        _logger.LogDebug("Loaded configuration for {ServerCount} MCP server(s)", _configuration.Servers.Count);
     }
 
     /// <summary>
-    /// Connects to Microsoft Docs MCP server and retrieves available tools.
+    /// Connects to all configured MCP servers and retrieves available tools.
     /// </summary>
-    public async Task<IList<AITool>> GetMicrosoftLearnToolsAsync()
+    public async Task<IList<AITool>> GetToolsAsync()
     {
-        try
+        var allTools = new List<AITool>();
+
+        if (_configuration.Servers.Count == 0)
         {
-            // Create MCP client connecting to Microsoft Docs HTTP server
-            var transport = new SseClientTransport(new SseClientTransportOptions
+            _logger.LogWarning("No MCP servers configured. Agent will run without MCP tools.");
+            return allTools;
+        }
+
+        foreach (var serverConfig in _configuration.Servers)
+        {
+            if (!serverConfig.Enabled)
             {
-                Endpoint = new Uri("https://learn.microsoft.com/api/mcp"),
-                Name = "MicrosoftDocsServer"
-            });
+                _logger.LogDebug("Skipping disabled MCP server: {ServerName}", serverConfig.Name);
+                continue;
+            }
 
-            _mcpClient = await McpClientFactory.CreateAsync(transport);
+            if (string.IsNullOrEmpty(serverConfig.Endpoint))
+            {
+                _logger.LogWarning("MCP server '{ServerName}' has no endpoint configured - skipping", serverConfig.Name);
+                continue;
+            }
 
-            _logger.LogDebug("Connected to Microsoft Docs MCP server at https://learn.microsoft.com/api/mcp");
+            try
+            {
+                _logger.LogDebug("Connecting to MCP server '{ServerName}' at {Endpoint}", 
+                    serverConfig.Name, serverConfig.Endpoint);
 
-            // Retrieve the list of tools from the MCP server
-            var mcpTools = await _mcpClient.ListToolsAsync();
-            
-            _logger.LogDebug("Retrieved {ToolCount} tools from MCP server: {ToolNames}", 
-                mcpTools.Count(), string.Join(", ", mcpTools.Select(t => t.Name)));
+                // Create MCP client for this server
+                var transport = new SseClientTransport(new SseClientTransportOptions
+                {
+                    Endpoint = new Uri(serverConfig.Endpoint),
+                    Name = serverConfig.Name
+                });
 
-            // McpClientTool extends AIFunction which implements AITool
-            return mcpTools.ToList<AITool>();
+                var mcpClient = await McpClientFactory.CreateAsync(transport);
+                _mcpClients.Add(mcpClient);
+
+                _logger.LogInformation("✓ Connected to MCP server: {ServerName}", serverConfig.Name);
+
+                // Retrieve the list of tools from this MCP server
+                var mcpTools = await mcpClient.ListToolsAsync();
+                
+                _logger.LogDebug("Retrieved {ToolCount} tool(s) from '{ServerName}': {ToolNames}", 
+                    mcpTools.Count(), 
+                    serverConfig.Name,
+                    string.Join(", ", mcpTools.Select(t => t.Name)));
+
+                // Add tools from this server to the complete list
+                allTools.AddRange(mcpTools);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to connect to MCP server '{ServerName}' at {Endpoint}", 
+                    serverConfig.Name, serverConfig.Endpoint);
+                // Continue to next server instead of failing completely
+            }
         }
-        catch (Exception ex)
+
+        if (allTools.Count > 0)
         {
-            _logger.LogError(ex, "Failed to connect to Microsoft Docs MCP server");
-            // Return empty list if connection fails
-            return new List<AITool>();
+            _logger.LogInformation("Successfully loaded {ToolCount} MCP tool(s) from {ServerCount} server(s)", 
+                allTools.Count, _mcpClients.Count);
         }
+        else
+        {
+            _logger.LogWarning("No MCP tools available - all configured servers failed or returned no tools");
+        }
+
+        return allTools;
     }
 
     public async Task DisposeAsync()
     {
-        if (_mcpClient != null)
+        foreach (var client in _mcpClients)
         {
-            await _mcpClient.DisposeAsync();
-            _logger.LogDebug("Disposed MCP client");
+            await client.DisposeAsync();
         }
+        _mcpClients.Clear();
+        _logger.LogDebug("Disposed {ClientCount} MCP client(s)", _mcpClients.Count);
     }
 }

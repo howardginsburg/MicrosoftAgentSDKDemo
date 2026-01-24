@@ -28,5 +28,15 @@
     "AccountKey": "your-cosmos-account-key-here",
     "DatabaseName": "agent-database",
     "ContainerId": "conversations"
+  },
+  "MCPServers": {
+    "Servers": [
+      {
+        "Name": "Microsoft Learn",
+        "Endpoint": "https://learn.microsoft.com/api/mcp",
+        "Enabled": true,
+        "TimeoutSeconds": 30
+      }
+    ]
   }
 }

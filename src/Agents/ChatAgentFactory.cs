@@ -63,8 +63,8 @@ public class ChatAgentFactory : IAgentFactory
         var credential = new AzureCliCredential();
         var azureOpenAIClient = new AzureOpenAIClient(new Uri(endpoint), credential);
 
-        // Get MCP tools from Microsoft Docs server
-        var mcpTools = await _mcpServerManager.GetMicrosoftLearnToolsAsync();
+        // Get MCP tools from all configured MCP servers
+        var mcpTools = await _mcpServerManager.GetToolsAsync();
         
         if (mcpTools.Any())
         {
