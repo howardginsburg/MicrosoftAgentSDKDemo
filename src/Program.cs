@@ -24,22 +24,26 @@ var host = Host.CreateDefaultBuilder(args)
     })
     .ConfigureServices((context, services) =>
     {
-        // Configure Cosmos DB Storage using framework's IStorage
+        // Configure Cosmos DB Storage using framework's IStorage with Azure CLI credentials
         var cosmosConfig = context.Configuration.GetSection("CosmosDB");
         var endpoint = cosmosConfig["Endpoint"] ?? throw new InvalidOperationException("CosmosDB Endpoint not configured");
-        var accountKey = cosmosConfig["AccountKey"] ?? throw new InvalidOperationException("CosmosDB AccountKey not configured");
         var databaseName = cosmosConfig["DatabaseName"] ?? "agent-database";
         var containerId = cosmosConfig["ContainerId"] ?? "conversations";
 
         services.AddSingleton<IStorage>(sp =>
-            new CosmosDbPartitionedStorage(
+        {
+            var logger = sp.GetRequiredService<ILogger<Program>>();
+            logger.LogInformation("Cosmos DB: Using Azure CLI credential (RBAC)");
+            
+            return new CosmosDbPartitionedStorage(
                 new CosmosDbPartitionedStorageOptions
                 {
                     CosmosDbEndpoint = endpoint,
-                    AuthKey = accountKey,
                     DatabaseId = databaseName,
-                    ContainerId = containerId
-                }));
+                    ContainerId = containerId,
+                    TokenCredential = new AzureCliCredential()
+                });
+        });
 
         // Register Agent Framework services
         services.AddSingleton<CosmosDbAgentThreadStore>();

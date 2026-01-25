@@ -41,7 +41,20 @@ A console-based AI agent application built with the Microsoft Agent Framework, f
    ```
    Ensure your account has `Cognitive Services OpenAI User` role on the Azure OpenAI resource.
 
-3. **Configure the application**
+3. **Grant Cosmos DB RBAC permissions (Required)**
+   
+   The application uses Azure CLI credentials for Cosmos DB. Run the script to grant permissions:
+   ```bash
+   # Linux/macOS
+   chmod +x scripts/grant-cosmos-rbac.sh
+   ./scripts/grant-cosmos-rbac.sh <resource-group> <cosmos-account>
+   
+   # Windows (Git Bash)
+   bash scripts/grant-cosmos-rbac.sh <resource-group> <cosmos-account>
+   ```
+   See [scripts/README.md](scripts/README.md) for details.
+
+4. **Configure the application**
    ```bash
    cd src
    cp appsettings.json.sample appsettings.json
@@ -52,13 +65,12 @@ A console-based AI agent application built with the Microsoft Agent Framework, f
    - `AzureOpenAI:DallEEndpoint` - Your Azure OpenAI endpoint for DALL-E (can be same or different resource)
    - `AzureOpenAI:DallEDeploymentName` - Your DALL-E 3 deployment name
    - `CosmosDB:Endpoint` - Your Cosmos DB account endpoint
-   - `CosmosDB:AccountKey` - Your Cosmos DB account key
 
-4. **Create Cosmos DB resources**
+5. **Create Cosmos DB resources**
    
    Create a database `agent-database` and container `conversations` with partition key `/id`
 
-5. **Build and run**
+6. **Build and run**
    ```bash
    dotnet build
    dotnet run
@@ -151,7 +163,6 @@ Key settings in `appsettings.json`:
   },
   "CosmosDB": {
     "Endpoint": "https://your-cosmos.documents.azure.com:443/",
-    "AccountKey": "your-cosmos-key",
     "DatabaseName": "agent-database",
     "ContainerId": "conversations"
   }

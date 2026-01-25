@@ -25,7 +25,6 @@
   },
   "CosmosDB": {
     "Endpoint": "https://your-cosmos-account.documents.azure.com:443/",
-    "AccountKey": "your-cosmos-account-key-here",
     "DatabaseName": "agent-database",
     "ContainerId": "conversations"
   },

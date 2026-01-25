@@ -98,13 +98,13 @@ You'll need the following Azure resources (created before running the app):
 
 ### Azure Authentication
 
-The app uses **AzureCliCredential** for authentication:
-- Azure OpenAI: `AzureCliCredential`
-- Cosmos DB: Uses account key from configuration
+The app uses **AzureCliCredential** for all Azure service authentication:
+- **Azure OpenAI**: `AzureCliCredential` (requires `Cognitive Services OpenAI User` role)
+- **Cosmos DB**: `AzureCliCredential` (requires `Cosmos DB Built-in Data Contributor` role via RBAC script)
 
 You must have:
 - Azure CLI logged in: `az login`
-- Required RBAC roles assigned to your user
+- Required RBAC roles assigned to your user (see setup steps below)
 
 ## Setup Steps
 
@@ -195,6 +195,25 @@ az role assignment create `
   --scope /subscriptions/{subscription-id}/resourceGroups/$resourceGroup/providers/Microsoft.CognitiveServices/accounts/agent-demo-openai
 ```
 
+#### For Azure Cosmos DB (Required - Enable RBAC)
+
+The application uses Azure CLI credentials for Cosmos DB authentication. Use the provided script to grant permissions:
+
+```bash
+# Make script executable (Linux/macOS)
+chmod +x scripts/grant-cosmos-rbac.sh
+
+# Run the script
+./scripts/grant-cosmos-rbac.sh agent-demo-rg agent-demo-cosmos
+
+# On Windows (Git Bash)
+bash scripts/grant-cosmos-rbac.sh agent-demo-rg agent-demo-cosmos
+```
+
+This assigns the "Cosmos DB Built-in Data Contributor" role to your Azure CLI user.
+
+See [scripts/README.md](scripts/README.md) for more details.
+
 ### 3. Get Connection Strings and Keys
 
 ```powershell
@@ -213,14 +232,6 @@ $cosmosEndpoint = az cosmosdb show `
   --query documentEndpoint -o tsv
 
 Write-Host "Cosmos DB Endpoint: $cosmosEndpoint"
-
-# Cosmos DB Account Key
-$accountKey = az cosmosdb keys list `
-  --name agent-demo-cosmos `
-  --resource-group $resourceGroup `
-  --query primaryMasterKey -o tsv
-
-Write-Host "Cosmos DB Account Key: $accountKey"
 
 # Application Insights
 $aiKey = az monitor app-insights component show `
@@ -273,7 +284,7 @@ Edit `appsettings.json`:
 Replace:
 - `your-openai.cognitiveservices.azure.com` - your Azure OpenAI endpoint
 - `your-cosmos.documents.azure.com` - your Cosmos DB endpoint
-- `your-cosmos-account-key` - Cosmos DB account key
+- `your-cosmos-account-key` - Cosmos DB account key (optional if using RBAC - see scripts/grant-cosmos-rbac.sh)
 - `your-instrumentation-key-optional` - Application Insights key (optional)
 
 ### 5. Run the Application
