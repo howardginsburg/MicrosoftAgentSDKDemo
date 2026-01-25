@@ -7,13 +7,16 @@ A console-based AI agent application built with the Microsoft Agent Framework, f
 - 🤖 **AI Agent powered by Azure OpenAI** - Uses GPT-4o for intelligent conversations
 - 🎨 **Image Generation** - DALL-E 3 integration for creating images
 - 📚 **MCP Integration** - Connects to Microsoft Learn documentation via Model Context Protocol
+- � **File Attachments** - Attach text files and images when starting conversations
+- 🖼️ **Vision Support** - Analyze images using GPT-4o vision capabilities
 - 💾 **Persistent Storage** - Conversation history stored in Azure Cosmos DB
 - 👥 **Multi-User Support** - Isolated conversations per user with data partitioning
-- 🖼️ **Rich Console UI** - Beautiful terminal interface with Spectre.Console
+- 🎨 **Rich Console UI** - Beautiful terminal interface with Spectre.Console
 - 🔄 **Thread Management** - Create, resume, and manage conversation threads
 - 📜 **Conversation History** - Full chat history displayed when loading threads
 - 💿 **Local Image Storage** - Generated images saved locally with automatic viewer launch
 - 🔧 **Tool Invocation Display** - See agent reasoning and MCP tool usage in real-time
+- ⚙️ **Configurable MCP Servers** - Support for multiple MCP servers via configuration
 
 ## Prerequisites
 
@@ -81,9 +84,34 @@ A console-based AI agent application built with the Microsoft Agent Framework, f
 - Enter your username to start a session
 - Use **arrow keys** to navigate the thread selection menu
 - Select **"📝 Start a new conversation"** to begin
+- **Optional**: Attach files (text or images) when starting a new conversation
 - Ask questions about Azure (the agent has access to Microsoft Learn docs)
 - Type `quit` in chat to return to thread menu
 - Select **"🚪 Logout"** at thread menu to switch users
+
+### File Attachments
+
+When starting a new conversation, you can attach files:
+
+**Supported Text Files** (up to 10MB each):
+- Code: .cs, .js, .ts, .py, .java, .cpp
+- Documentation: .txt, .md
+- Data: .json, .xml, .csv, .log
+- Web: .html, .css
+- Config: .yaml, .yml, .toml, .ini, .config
+
+**Supported Image Files** (up to 10MB each):
+- .jpg, .jpeg, .png, .gif, .bmp, .webp
+
+**To attach files**:
+1. When prompted "What would you like to talk about?", enter your message
+2. When prompted for file attachments, enter comma-separated file paths:
+   ```
+   Files > C:\codes\app.cs, C:\images\diagram.png
+   ```
+3. Press Enter to skip if no attachments needed
+
+**Note**: File attachments are only available when starting a new conversation, not during ongoing chats.
 
 ### Example Session
 
@@ -116,8 +144,21 @@ Enter your username: Howard
   ↑↓ Select an option:
   > 📝 Start a new conversation
     💬 what is azure sql
+    💬 analyze this architecture diagram
     💬 how does Fabric Spark compare to Databricks Spark?
     🚪 Logout
+
+> 📝 Start a new conversation
+
+What would you like to talk about? Analyze this code for best practices
+
+Attach files? (Enter file paths separated by commas, or press Enter to skip)
+Note: File attachments are only available when starting a new conversation
+Files > C:\Users\Howard\code\api.cs
+
+📎 Attached 1 file(s)
+
+🤔 Agent is thinking...
 ```
 
 ## Project Structure
@@ -135,8 +176,11 @@ src/
 │   └── CosmosDbChatMessageStore.cs     # Message persistence layer
 ├── Integration/
 │   ├── MCPServerManager.cs             # MCP server connection manager
-│   └── ImageGenerationService.cs       # DALL-E 3 image generation service
-├── Models/                             # Data models
+│   ├── ImageGenerationService.cs       # DALL-E 3 image generation service
+│   ├── FileAttachmentService.cs        # File attachment processing
+│   └── MultimodalMessageHelper.cs      # Multimodal message construction
+├── Models/
+│   └── MCPServerConfiguration.cs       # MCP server configuration models
 ├── prompts/
 │   └── system-instructions.txt         # Agent behavior instructions
 ├── images/                             # Generated images (created automatically)
@@ -148,12 +192,17 @@ src/
 
 See `appsettings.json.sample` for a complete configuration template. The application uses:
 - **Azure CLI authentication** for Azure OpenAI (requires `az login` and `Cognitive Services OpenAI User` role)
-- **Account key** for Cosmos DB
+- **Azure CLI authentication** for Cosmos DB (requires RBAC assignment via script)
 - **System instructions** in `src/prompts/system-instructions.txt` (customize agent behavior)
+- **Configurable MCP servers** for tool integration
 
 Key settings in `appsettings.json`:
 ```json
 {
+  "Application": {
+    "DisplayName": "Agent SDK Demo",
+    "AgentName": "Agent"
+  },
   "AzureOpenAI": {
     "Endpoint": "https://your-openai.cognitiveservices.azure.com",
     "DeploymentName": "gpt-4o",
@@ -165,6 +214,16 @@ Key settings in `appsettings.json`:
     "Endpoint": "https://your-cosmos.documents.azure.com:443/",
     "DatabaseName": "agent-database",
     "ContainerId": "conversations"
+  },
+  "MCPServers": {
+    "Servers": [
+      {
+        "Name": "Microsoft Learn",
+        "Endpoint": "https://learn.microsoft.com/api/mcp",
+        "Enabled": true,
+        "TimeoutSeconds": 30
+      }
+    ]
   }
 }
 ```
@@ -176,7 +235,9 @@ Built on the Microsoft Agent Framework with:
 - **CosmosDbAgentThreadStore** - Custom thread store using IStorage interface
 - **CosmosDbChatMessageStore** - Custom message store for conversation history
 - **ReasoningChatClient** - DelegatingChatClient middleware that displays agent reasoning and tool invocations
-- **MCP Integration** - Model Context Protocol for external tool access (Microsoft Learn)
+- **FileAttachmentService** - Processes text and image file attachments
+- **MultimodalMessageHelper** - Constructs ChatMessages with multimodal content (text + images)
+- **MCPServerManager** - Configurable MCP server connections for external tool access
 - **Spectre.Console** - Rich terminal UI with interactive menus
 
 For detailed architecture documentation, see [.github/copilot-instructions.md](.github/copilot-instructions.md)

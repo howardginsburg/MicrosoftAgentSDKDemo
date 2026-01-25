@@ -4,7 +4,7 @@
 
 This is a .NET 8.0 console application that implements a multi-turn conversational agent using:
 - **Microsoft Agent Framework** (AIHostAgent, AgentThreadStore patterns)
-- **Azure OpenAI** (GPT-4o) for AI conversations
+- **Azure AI Foundry** (GPT-4o) for AI conversations
 - **Model Context Protocol (MCP)** for Microsoft Learn documentation access
 - **Azure Cosmos DB** for persistent storage (IStorage interface)
 - **Spectre.Console** for rich terminal UI
@@ -14,13 +14,16 @@ This is a .NET 8.0 console application that implements a multi-turn conversation
 
 ### Core Components
 
-1. **ChatAgentFactory** (factory) - Creates Azure OpenAI agents with MCP tools and chat history
+1. **ChatAgentFactory** (factory) - Creates Azure AI Foundry agents with MCP tools and chat history
 2. **ReasoningChatClient** - Middleware that displays agent reasoning and tool invocations
 3. **CosmosDbAgentThreadStore** - Manages thread metadata and user thread index
 4. **CosmosDbChatMessageStore** - Persists conversation messages
-5. **MCPServerManager** - Connects to Microsoft Learn MCP server
-6. **ConsoleUI** - Rich terminal interface with Spectre.Console
-7. **AIHostAgent** - Framework wrapper providing automatic persistence
+5. **MCPServerManager** - Connects to configured MCP servers (supports multiple endpoints)
+6. **FileAttachmentService** - Processes text and image file attachments
+7. **MultimodalMessageHelper** - Constructs multimodal ChatMessages with content arrays
+8. **ImageGenerationService** - DALL-E 3 image generation and local storage
+9. **ConsoleUI** - Rich terminal interface with Spectre.Console
+10. **AIHostAgent** - Framework wrapper providing automatic persistence
 
 ### Storage Architecture
 
@@ -75,22 +78,18 @@ Cosmos DB container `conversations` with partition key `/id` contains:
 
 You'll need the following Azure resources (created before running the app):
 
-1. **Azure OpenAI Service (for GPT-4o)**
-   - Resource name: `{your-resource-name}`
-   - Deployment: `gpt-4o` (or your preferred model)
-   - Endpoint: `https://{your-resource-name}.cognitiveservices.azure.com`
-   - Region: East US, France Central, or other available regions
-
-2. **Azure OpenAI Service (for DALL-E 3)**
-   - Can be same resource as above or separate
-   - Deployment: `dall-e-3`
-   - Endpoint: `https://{your-dalle-resource}.cognitiveservices.azure.com`
-   - Region: Must support DALL-E (e.g., Sweden Central, East US)
+1. **Azure AI Foundry (for GPT-4o and DALL-E 3)**
+   - Resource name: `{your-foundry-resource-name}` (e.g., `agent-demo-foundry`)
+   - Project name: `{your-project-name}` (e.g., `agent-demo-project`)
+   - Deployments: `gpt-4o` and `dall-e-3`
+   - Endpoint: `https://{your-foundry-resource-name}.cognitiveservices.azure.com`
+   - Region: East US, Sweden Central, or other available regions
+   - Kind: AIServices (with --allow-project-management)
 
 2. **Azure Cosmos DB Account**
    - Database: `agent-database`
    - Container: `conversations`
-   - Partition Key: `/userId` (single path)
+   - Partition Key: `/id` (single path)
 
 3. **Application Insights** (Optional but recommended)
    - Instrumentation Key for telemetry
@@ -99,7 +98,7 @@ You'll need the following Azure resources (created before running the app):
 ### Azure Authentication
 
 The app uses **AzureCliCredential** for all Azure service authentication:
-- **Azure OpenAI**: `AzureCliCredential` (requires `Cognitive Services OpenAI User` role)
+- **Azure AI Foundry**: `AzureCliCredential` (requires `Azure AI Developer` role)
 - **Cosmos DB**: `AzureCliCredential` (requires `Cosmos DB Built-in Data Contributor` role via RBAC script)
 
 You must have:
@@ -111,88 +110,108 @@ You must have:
 ### 1. Create Azure Resources
 
 #### Create Resource Group
-```powershell
-$resourceGroup = "agent-demo-rg"
-$location = "eastus"
+```bash
+resourceGroup="agent-demo-rg"
+location="eastus"
 
 az group create --name $resourceGroup --location $location
 ```
 
-#### Create Azure OpenAI Resource
-```powershell
-az cognitiveservices account create `
-  --name agent-demo-openai `
-  --resource-group $resourceGroup `
-  --location $location `
-  --kind OpenAI `
-  --sku s0
+#### Create Azure AI Foundry Resource
+```bash
+# Create the Foundry resource
+az cognitiveservices account create \
+  --name agent-demo-foundry \
+  --resource-group $resourceGroup \
+  --kind AIServices \
+  --sku s0 \
+  --location $location \
+  --allow-project-management
+
+# Create a custom subdomain (must be globally unique)
+az cognitiveservices account update \
+  --name agent-demo-foundry \
+  --resource-group $resourceGroup \
+  --custom-domain agent-demo-foundry
+
+# Create the project
+az cognitiveservices account project create \
+  --name agent-demo-foundry \
+  --resource-group $resourceGroup \
+  --project-name agent-demo-project \
+  --location $location
 
 # Deploy GPT-4o model
-az cognitiveservices account deployment create `
-  --name agent-demo-openai `
-  --resource-group $resourceGroup `
-  --deployment-name gpt-4o `
-  --model-name gpt-4 `
-  --model-version "turbo-2024-04-09" `
-  --sku-name "standard" `
-  --sku-capacity 1
+az cognitiveservices account deployment create \
+  --name agent-demo-foundry \
+  --resource-group $resourceGroup \
+  --deployment-name gpt-4o \
+  --model-name gpt-4o \
+  --model-version "2024-11-20" \
+  --model-format OpenAI \
+  --sku-name GlobalStandard \
+  --sku-capacity 10
 
-# Deploy DALL-E 3 model (can be in same or different resource)
-az cognitiveservices account deployment create `
-  --name agent-demo-openai `
-  --resource-group $resourceGroup `
-  --deployment-name dall-e-3 `
-  --model-name dall-e-3 `
-  --model-version "3.0" `
-  --model-format OpenAI `
-  --sku-name "Standard" `
+# Deploy DALL-E 3 model
+az cognitiveservices account deployment create \
+  --name agent-demo-foundry \
+  --resource-group $resourceGroup \
+  --deployment-name dall-e-3 \
+  --model-name dall-e-3 \
+  --model-version "3.0" \
+  --model-format OpenAI \
+  --sku-name Standard \
   --sku-capacity 1
 ```
 
 #### Create Cosmos DB Account
-```powershell
-az cosmosdb create `
-  --name agent-demo-cosmos `
-  --resource-group $resourceGroup `
-  --locations regionName=$location failoverPriority=0 `
+```bash
+az cosmosdb create \
+  --name agent-demo-cosmos \
+  --resource-group $resourceGroup \
+  --locations regionName=$location failoverPriority=0 \
   --default-consistency-level "Session"
 
 # Create database
-az cosmosdb sql database create `
-  --account-name agent-demo-cosmos `
-  --resource-group $resourceGroup `
+az cosmosdb sql database create \
+  --account-name agent-demo-cosmos \
+  --resource-group $resourceGroup \
   --name agent-database
 
 # Create container with partition key /id (framework default)
-az cosmosdb sql container create `
-  --account-name agent-demo-cosmos `
-  --database-name agent-database `
-  --name conversations `
-  --partition-key-path "/id" `
-  --resource-group $resourceGroup `
+az cosmosdb sql container create \
+  --account-name agent-demo-cosmos \
+  --database-name agent-database \
+  --name conversations \
+  --partition-key-path "/id" \
+  --resource-group $resourceGroup \
   --throughput 400
 ```
 
 #### Create Application Insights (Optional)
-```powershell
-az monitor app-insights component create `
-  --app agent-demo-insights `
-  --location $location `
+```bash
+az monitor app-insights component create \
+  --app agent-demo-insights \
+  --location $location \
   --resource-group $resourceGroup
 ```
 
 ### 2. Assign Required RBAC Roles
 
-#### For Azure OpenAI
-```powershell
-# Get your user object ID
-$userObjectId = az ad signed-in-user show --query id -o tsv
+#### For Azure AI Foundry
+```bash
+# Get the project's resource ID
+projectId=$(az cognitiveservices account project show \
+  --name agent-demo-foundry \
+  --resource-group $resourceGroup \
+  --project-name agent-demo-project \
+  --query id -o tsv)
 
-# Assign Cognitive Services OpenAI User role
-az role assignment create `
-  --role "Cognitive Services OpenAI User" `
-  --assignee $userObjectId `
-  --scope /subscriptions/{subscription-id}/resourceGroups/$resourceGroup/providers/Microsoft.CognitiveServices/accounts/agent-demo-openai
+# Assign Azure AI Developer role
+az role assignment create \
+  --role "Azure AI Developer" \
+  --assignee $(az ad signed-in-user show --query id -o tsv) \
+  --scope $projectId
 ```
 
 #### For Azure Cosmos DB (Required - Enable RBAC)
@@ -216,37 +235,37 @@ See [scripts/README.md](scripts/README.md) for more details.
 
 ### 3. Get Connection Strings and Keys
 
-```powershell
-# Azure OpenAI
-$openAIEndpoint = az cognitiveservices account show `
-  --name agent-demo-openai `
-  --resource-group $resourceGroup `
-  --query properties.endpoint -o tsv
+```bash
+# Azure AI Foundry
+foundryEndpoint=$(az cognitiveservices account show \
+  --name agent-demo-foundry \
+  --resource-group $resourceGroup \
+  --query properties.endpoint -o tsv)
 
-Write-Host "OpenAI Endpoint: $openAIEndpoint"
+echo "Foundry Endpoint: $foundryEndpoint"
 
 # Cosmos DB Endpoint
-$cosmosEndpoint = az cosmosdb show `
-  --name agent-demo-cosmos `
-  --resource-group $resourceGroup `
-  --query documentEndpoint -o tsv
+cosmosEndpoint=$(az cosmosdb show \
+  --name agent-demo-cosmos \
+  --resource-group $resourceGroup \
+  --query documentEndpoint -o tsv)
 
-Write-Host "Cosmos DB Endpoint: $cosmosEndpoint"
+echo "Cosmos DB Endpoint: $cosmosEndpoint"
 
 # Application Insights
-$aiKey = az monitor app-insights component show `
-  --app agent-demo-insights `
-  --resource-group $resourceGroup `
-  --query instrumentationKey -o tsv
+aiKey=$(az monitor app-insights component show \
+  --app agent-demo-insights \
+  --resource-group $resourceGroup \
+  --query instrumentationKey -o tsv)
 
-Write-Host "Application Insights Key: $aiKey"
+echo "Application Insights Key: $aiKey"
 ```
 
 ### 4. Configure Application
 
 Copy the sample configuration and update with your Azure resource details:
 
-```powershell
+```bash
 cd src
 cp appsettings.json.sample appsettings.json
 ```
@@ -266,15 +285,14 @@ Edit `appsettings.json`:
     "InstrumentationKey": "your-instrumentation-key-optional"
   },
   "AzureOpenAI": {
-    "Endpoint": "https://your-openai.cognitiveservices.azure.com",
+    "Endpoint": "https://your-foundry-resource.cognitiveservices.azure.com",
     "DeploymentName": "gpt-4o",
-    "DallEEndpoint": "https://your-dalle-openai.cognitiveservices.azure.com",
+    "DallEEndpoint": "https://your-foundry-resource.cognitiveservices.azure.com",
     "DallEDeploymentName": "dall-e-3",
     "SystemInstructionsFile": "prompts/system-instructions.txt"
   },
   "CosmosDB": {
     "Endpoint": "https://your-cosmos.documents.azure.com:443/",
-    "AccountKey": "your-cosmos-account-key",
     "DatabaseName": "agent-database",
     "ContainerId": "conversations"
   }
@@ -282,14 +300,13 @@ Edit `appsettings.json`:
 ```
 
 Replace:
-- `your-openai.cognitiveservices.azure.com` - your Azure OpenAI endpoint
+- `your-foundry-resource.cognitiveservices.azure.com` - your Azure AI Foundry endpoint
 - `your-cosmos.documents.azure.com` - your Cosmos DB endpoint
-- `your-cosmos-account-key` - Cosmos DB account key (optional if using RBAC - see scripts/grant-cosmos-rbac.sh)
 - `your-instrumentation-key-optional` - Application Insights key (optional)
 
 ### 5. Run the Application
 
-```powershell
+```bash
 cd src
 dotnet run
 
@@ -313,17 +330,27 @@ Enter your username: Alice
   ↑↓ Use arrow keys to select:
   > 📝 Start a new conversation
     💬 what is azure sql
+    💬 analyze this architecture diagram
     💬 how does Fabric Spark compare to Databricks?
     🚪 Logout
 
 (Select existing thread to see full conversation history)
 
-What would you like to talk about? Tell me about managed identities
+> 📝 Start a new conversation
+
+What would you like to talk about? Analyze this diagram and explain the architecture
+
+Attach files? (Enter file paths separated by commas, or press Enter to skip)
+Note: File attachments are only available when starting a new conversation
+Files > C:\Users\Alice\documents\architecture.png
+
+📎 Attached 1 file(s)
 
 🤔 Agent is thinking...
 
 ╭──────────────────── 🤖 Agent ─────────────────────╮
-│ Managed identities are a feature of Azure...      │
+│ Based on the architecture diagram, I can see...   │
+│ [Analysis of the architecture diagram]            │
 ╰────────────────────────────────────────────────────╯
 
 You> tell me the difference between azure synapse and fabric
@@ -364,6 +391,36 @@ The agent can generate images using DALL-E 3:
 - Images automatically open in your default image viewer
 - Supported formats: PNG (1024x1024, 1024x1792, 1792x1024)
 
+### File Attachments
+
+Attach files when starting a new conversation:
+
+**Supported Text File Types** (up to 10MB):
+- Code files: `.cs`, `.js`, `.ts`, `.py`, `.java`, `.cpp`
+- Documentation: `.txt`, `.md`
+- Data files: `.json`, `.xml`, `.csv`, `.log`
+- Web files: `.html`, `.css`
+- Configuration: `.yaml`, `.yml`, `.toml`, `.ini`, `.config`
+
+**Supported Image Types** (up to 10MB):
+- `.jpg`, `.jpeg`, `.png`, `.gif`, `.bmp`, `.webp`
+
+**Usage**:
+1. Select "📝 Start a new conversation"
+2. Enter your message/question
+3. When prompted for file attachments, enter comma-separated paths:
+   ```
+   Files > C:\code\api.cs, C:\images\diagram.png
+   ```
+4. Press Enter to skip if no files needed
+
+**Important Notes**:
+- File attachments are **only available when starting new conversations**
+- Cannot attach files in ongoing conversations (by design)
+- Images enable vision model analysis
+- Text files are formatted as code blocks for better readability
+- Files exceeding 10MB are rejected with an error message
+
 ### Tool Invocation Display
 
 The agent displays its reasoning process:
@@ -374,12 +431,60 @@ The agent displays its reasoning process:
 
 ## MCP Integration
 
-The application connects to Microsoft Learn's MCP server to provide:
+The application connects to configured MCP servers via `appsettings.json`:
+
+```json
+"MCPServers": {
+  "Servers": [
+    {
+      "Name": "Microsoft Learn",
+      "Endpoint": "https://learn.microsoft.com/api/mcp",
+      "Enabled": true,
+      "TimeoutSeconds": 30
+    }
+  ]
+}
+```
+
+### MCP Server Configuration
+
+Each MCP server has the following properties:
+- **Name**: Friendly name for logging and identification
+- **Endpoint**: The HTTPS endpoint URL for the MCP server
+- **Enabled**: Set to `false` to temporarily disable without removing configuration
+- **TimeoutSeconds**: Connection timeout (default: 30)
+
+### Microsoft Learn MCP Server
+
+The default configuration includes Microsoft Learn which provides:
 - **microsoft_docs_search** - Search official Microsoft documentation
 - **microsoft_code_sample_search** - Find code examples
 - **microsoft_docs_fetch** - Retrieve full documentation pages
 
-Endpoint: https://learn.microsoft.com/api/mcp (no configuration needed)
+### Adding Additional MCP Servers
+
+To add more MCP servers, simply add entries to the `Servers` array:
+
+```json
+"MCPServers": {
+  "Servers": [
+    {
+      "Name": "Microsoft Learn",
+      "Endpoint": "https://learn.microsoft.com/api/mcp",
+      "Enabled": true,
+      "TimeoutSeconds": 30
+    },
+    {
+      "Name": "Your Custom Server",
+      "Endpoint": "https://your-server.com/api/mcp",
+      "Enabled": true,
+      "TimeoutSeconds": 60
+    }
+  ]
+}
+```
+
+All tools from all enabled MCP servers are automatically integrated with the agent.
 
 ## System Instructions
 
@@ -403,13 +508,13 @@ Benefits of separate file:
 ## Development Tips
 
 ### Rebuild
-```powershell
+```bash
 cd src
 dotnet build
 ```
 
 ### Run with Debug Logging
-```powershell
+```bash
 cd src
 dotnet run
 ```
@@ -417,7 +522,7 @@ dotnet run
 Adjust `LogLevel.MicrosoftAgentSDKDemo` to `Debug` in appsettings.json for verbose logging.
 
 ### Clean Build
-```powershell
+```bash
 cd src
 dotnet clean
 dotnet build
@@ -426,13 +531,13 @@ dotnet build
 ## Troubleshooting
 
 ### Issue: "Endpoint not configured"
-**Solution**: Verify `appsettings.json` has `AzureOpenAI:Endpoint` with your actual Azure OpenAI endpoint URL
+**Solution**: Verify `appsettings.json` has `AzureOpenAI:Endpoint` with your actual Azure AI Foundry endpoint URL
 
-### Issue: "Authentication failed" for Azure OpenAI
+### Issue: "Authentication failed" for Azure AI Foundry
 **Solution**:
 - Run `az login` to authenticate with Azure
-- Verify your account has `Cognitive Services OpenAI User` role:
-  ```powershell
+- Verify your account has `Azure AI Developer` role:
+  ```bash
   az role assignment list --assignee <your-email>
   ```
 - Check subscription: `az account show`
@@ -458,13 +563,29 @@ dotnet build
 - Check Cosmos DB for documents with id format `{userId}:{threadId}`
 - Ensure chat history documents exist (id format `chat-history-{guid}`)
 
+### Issue: File attachments not working
+**Solution**:
+- Verify file paths are correct and files exist
+- Check file size is under 10MB limit
+- Ensure file extensions are supported (see File Attachments section)
+- File attachments only work when **starting new conversations**, not in ongoing chats
+- Use comma-separated paths for multiple files
+- Check logs for specific file processing errors
+
+### Issue: Images not being analyzed
+**Solution**:
+- Verify image file format is supported (.jpg, .jpeg, .png, .gif, .bmp, .webp)
+- Ensure GPT-4o deployment supports vision capabilities
+- Check that FileAttachmentService is properly processing images as DataContent
+- Review logs for "image attachments - using vision model" message
+
 ## File Structure
 
 ```
 src/
 ├── Program.cs                        # Entry point with nested loop for multi-user sessions
 ├── Agents/
-│   └── ChatAgentFactory.cs           # Azure OpenAI agent factory with tools
+│   └── ChatAgentFactory.cs           # Azure AI Foundry agent factory with tools
 ├── Display/
 │   ├── ConsoleUI.cs                  # Spectre.Console UI components
 │   └── ReasoningChatClient.cs        # Tool invocation display middleware
@@ -472,19 +593,23 @@ src/
 │   ├── CosmosDbAgentThreadStore.cs   # Thread metadata persistence
 │   └── CosmosDbChatMessageStore.cs   # Conversation message persistence
 ├── Integration/
-│   ├── MCPServerManager.cs           # MCP server connection manager
-│   └── ImageGenerationService.cs     # DALL-E 3 image generation service
-└── Models/                           # Data models and types
-└── Services/
-    ├── ChatAgent.cs                  # Azure OpenAI agent factory with image generation tool
-    ├── ImageGenerationService.cs     # DALL-E 3 image generation service
-    ├── ConsoleUI.cs                  # Spectre.Console UI with in-console image display
-    ├── MCPServerManager.cs           # MCP server connection manager
-    ├── CosmosDbAgentThreadStore.cs   # Thread metadata persistence
-    └── CosmosDbChatMessageStore.cs   # Conversation message persistence
+│   ├── MCPServerManager.cs           # Configurable MCP server connection manager
+│   ├── ImageGenerationService.cs     # DALL-E 3 image generation service
+│   ├── FileAttachmentService.cs      # File attachment processing (text and images)
+│   └── MultimodalMessageHelper.cs    # Multimodal ChatMessage construction
+├── Models/
+│   └── MCPServerConfiguration.cs     # MCP server configuration models
+├── prompts/
+│   └── system-instructions.txt       # Agent system instructions
+└── images/                           # Generated images (auto-created)
 
 .github/
 └── copilot-instructions.md           # Comprehensive technical documentation
+
+scripts/
+├── README.md                         # Script documentation
+├── grant-cosmos-rbac.sh              # Grant Cosmos DB RBAC permissions
+└── grant-foundry-rbac.sh             # Grant Azure AI Foundry RBAC permissions
 ```
 
 ## Security Considerations
@@ -518,12 +643,15 @@ See: [.github/copilot-instructions.md](.github/copilot-instructions.md)
 ## Next Steps
 
 1. **Customize system instructions** for your domain
-2. **Add custom MCP servers** for specialized tools
+2. **Add custom MCP servers** for specialized tools (now configurable!)
 3. **Implement conversation export** functionality
 4. **Add thread search/filtering** capabilities
 5. **Enable streaming responses** for real-time feedback
 6. **Deploy to Azure Container Apps** or App Service
 7. **Build web UI** with Blazor or React
+8. **Extend file attachment support** to ongoing conversations
+9. **Add file type validation** and preview functionality
+10. **Implement file attachment history** display in conversation threads
 
 ## Resources
 
