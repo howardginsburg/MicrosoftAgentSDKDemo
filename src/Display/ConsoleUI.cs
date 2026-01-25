@@ -11,16 +11,19 @@ public interface IConsoleUI
 {
     Task<string> GetUsernameAsync();
     Task<ThreadSelection> GetThreadSelectionAsync(Dictionary<string, string> threads, string username);
-    Task<string?> GetFirstMessageAsync();
-    Task<string?> GetChatInputAsync(string username);
+    Task<(string Message, string? FilePaths)> GetFirstMessageWithAttachmentsAsync();
+    Task<string> GetChatInputAsync(string username);
     void DisplayThreadCreated(string threadId);
     void DisplayThreadLoaded(string threadId);
     void DisplayConversationHistory(IEnumerable<Microsoft.Extensions.AI.ChatMessage> messages, string username);
-    void DisplayAgentResponse(string response);    void DisplayImageGenerated(string imageUrl);    void DisplayError(string message);
+    void DisplayAgentResponse(string response);
+    void DisplayImageGenerated(string imageUrl);
+    void DisplayError(string message);
     void DisplayGoodbye();
+    void DisplayAttachmentsProcessed(int count);
 }
 
-public record ThreadSelection(ThreadSelectionType Type, string? ThreadId = null, string? FirstMessage = null);
+public record ThreadSelection(ThreadSelectionType Type, string? ThreadId = null, string? FirstMessage = null, string? FilePaths = null);
 
 public enum ThreadSelectionType
 {
@@ -89,8 +92,8 @@ public class ConsoleUI : IConsoleUI
         
         if (selection.Contains("Start a new conversation"))
         {
-            var firstMessage = await GetFirstMessageAsync();
-            return new ThreadSelection(ThreadSelectionType.New, FirstMessage: firstMessage);
+            var (firstMessage, filePaths) = await GetFirstMessageWithAttachmentsAsync();
+            return new ThreadSelection(ThreadSelectionType.New, FirstMessage: firstMessage, FilePaths: filePaths);
         }
         else if (selection.Contains("Logout"))
         {
@@ -105,7 +108,7 @@ public class ConsoleUI : IConsoleUI
         }
     }
 
-    public async Task<string?> GetFirstMessageAsync()
+    public async Task<(string Message, string? FilePaths)> GetFirstMessageWithAttachmentsAsync()
     {
         AnsiConsole.WriteLine();
         var message = AnsiConsole.Prompt(
@@ -113,14 +116,24 @@ public class ConsoleUI : IConsoleUI
                 .PromptStyle("green")
                 .AllowEmpty());
         
-        return await Task.FromResult(message);
+        if (string.IsNullOrWhiteSpace(message))
+            return await Task.FromResult((string.Empty, (string?)null));
+        
+        // Prompt for file attachments when starting a new conversation
+        AnsiConsole.Markup("[dim]Attach files? (Enter file paths separated by commas, or press Enter to skip)[/]\n");
+        AnsiConsole.Markup("[dim]Note: File attachments are only available when starting a new conversation[/]\n");
+        AnsiConsole.Markup("[grey]Files >[/] ");
+        var filePaths = Console.ReadLine();
+        
+        return await Task.FromResult((message, string.IsNullOrWhiteSpace(filePaths) ? null : filePaths));
     }
 
-    public async Task<string?> GetChatInputAsync(string username)
+    public async Task<string> GetChatInputAsync(string username)
     {
         AnsiConsole.WriteLine();
         AnsiConsole.Markup($"[bold cyan1]{username}[/] [grey]>[/] ");
-        var input = Console.ReadLine();
+        var input = Console.ReadLine() ?? string.Empty;
+        
         return await Task.FromResult(input);
     }
 
@@ -274,5 +287,13 @@ public class ConsoleUI : IConsoleUI
         rule.Style = Style.Parse("cyan1");
         AnsiConsole.Write(rule);
         AnsiConsole.WriteLine();
+    }
+
+    public void DisplayAttachmentsProcessed(int count)
+    {
+        if (count > 0)
+        {
+            AnsiConsole.MarkupLine($"[dim]📎 Attached {count} file(s)[/]");
+        }
     }
 }

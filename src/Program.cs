@@ -7,6 +7,7 @@ using Microsoft.Agents.AI;
 using Microsoft.Agents.AI.Hosting;
 using Microsoft.Agents.Storage;
 using Microsoft.Agents.Storage.CosmosDb;
+using Microsoft.Extensions.AI;
 using MicrosoftAgentSDKDemo.Agents;
 using MicrosoftAgentSDKDemo.Display;
 using MicrosoftAgentSDKDemo.Storage;
@@ -44,6 +45,8 @@ var host = Host.CreateDefaultBuilder(args)
         services.AddSingleton<CosmosDbAgentThreadStore>();
         services.AddSingleton<IMCPServerManager, MCPServerManager>();
         services.AddSingleton<IImageGenerationService, AzureOpenAIImageService>();
+        services.AddSingleton<IFileAttachmentService, FileAttachmentService>();
+        services.AddSingleton<MultimodalMessageHelper>();
         services.AddSingleton<IAgentFactory, ChatAgentFactory>();
         services.AddSingleton<IConsoleUI, ConsoleUI>();
     })
@@ -53,6 +56,8 @@ var logger = host.Services.GetRequiredService<ILogger<Program>>();
 var consoleUI = host.Services.GetRequiredService<IConsoleUI>();
 var threadStore = host.Services.GetRequiredService<CosmosDbAgentThreadStore>();
 var agentFactory = host.Services.GetRequiredService<IAgentFactory>();
+var fileAttachmentService = host.Services.GetRequiredService<IFileAttachmentService>();
+var multimodalHelper = host.Services.GetRequiredService<MultimodalMessageHelper>();
 
 logger.LogInformation("Application started | Framework: Microsoft Agent Framework");
 
@@ -107,13 +112,41 @@ while (!shouldExitApp)
             
             consoleUI.DisplayThreadCreated(threadId);
 
+            // Process file attachments and send first message
+            ChatMessage firstMessage;
+            
+            if (!string.IsNullOrWhiteSpace(selection.FilePaths))
+            {
+                var attachmentContents = await fileAttachmentService.ProcessFileAttachmentsAsync(selection.FilePaths);
+                consoleUI.DisplayAttachmentsProcessed(attachmentContents.Count);
+                
+                if (attachmentContents.Any())
+                {
+                    // Create multimodal ChatMessage with images and text
+                    firstMessage = multimodalHelper.CreateMultimodalMessage(selection.FirstMessage, attachmentContents);
+                    
+                    if (multimodalHelper.HasImageAttachments(attachmentContents))
+                    {
+                        logger.LogInformation("First message includes image attachments - using vision model");
+                    }
+                }
+                else
+                {
+                    firstMessage = new ChatMessage(ChatRole.User, selection.FirstMessage);
+                }
+            }
+            else
+            {
+                firstMessage = new ChatMessage(ChatRole.User, selection.FirstMessage);
+            }
+
             // Send first message with status display
             var response = await AnsiConsole.Status()
                 .Spinner(Spinner.Known.Dots)
                 .SpinnerStyle(Style.Parse("cyan"))
                 .StartAsync("🤔 Agent is thinking...", async ctx => 
                 {
-                    return await agent.RunAsync(selection.FirstMessage, thread);
+                    return await agent.RunAsync(firstMessage, thread);
                 });
             
             // Save thread AFTER first message so chat history key is available
@@ -189,13 +222,16 @@ while (!shouldExitApp)
                 {
                     logger.LogDebug("Processing message | UserId: {UserId} | ThreadId: {ThreadId}", username, threadId);
                     
+                    // Create simple text message (file attachments only available when starting new conversation)
+                    var chatMessage = new ChatMessage(ChatRole.User, input);
+                    
                     // Send message through agent with status display
                     var response = await AnsiConsole.Status()
                         .Spinner(Spinner.Known.Dots)
                         .SpinnerStyle(Style.Parse("cyan"))
                         .StartAsync("🤔 Agent is thinking...", async ctx => 
                         {
-                            return await agent.RunAsync(input, thread);
+                            return await agent.RunAsync(chatMessage, thread);
                         });
                     
                     // Explicitly save thread after each interaction to persist conversation history

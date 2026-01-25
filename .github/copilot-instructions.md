@@ -152,6 +152,34 @@ When adding new MCP servers:
 - Supports size and quality parameters from Azure OpenAI DALL-E 3
 - Returns file path for display purposes
 
+**FileAttachmentService.cs** - File attachment processing:
+- Processes comma-separated file paths from user input
+- Supports text files: .txt, .md, .json, .xml, .csv, .log, .cs, .js, .ts, .py, .java, .cpp, .html, .css, .yaml, .yml, .toml, .ini, .config
+- Supports image files: .jpg, .jpeg, .png, .gif, .bmp, .webp
+- Enforces 10MB file size limit for all attachments
+- Text files are wrapped in markdown code blocks with filename header
+- Image files are converted to `DataContent` with proper media type for vision model
+- Returns `List<AIContent>` containing TextContent and/or DataContent objects
+
+**MultimodalMessageHelper.cs** - ChatMessage construction:
+- Creates properly structured `ChatMessage` objects with multimodal content
+- `CreateMultimodalMessage()` combines user text + attachments into single ChatMessage
+- Content array structure: [TextContent (user message), ...AIContent (attachments)]
+- **CRITICAL**: This enables proper image support via `agent.RunAsync(ChatMessage, thread)`
+- `HasImageAttachments()` checks for DataContent to identify vision model usage
+
+When handling file attachments:
+```csharp
+// Process attachments
+var attachmentContents = await fileAttachmentService.ProcessFileAttachmentsAsync(filePaths);
+
+// Create multimodal ChatMessage (not string concatenation!)
+var chatMessage = multimodalHelper.CreateMultimodalMessage(userText, attachmentContents);
+
+// Use ChatMessage overload for proper multimodal support
+await agent.RunAsync(chatMessage, thread);  // NOT RunAsync(string, thread)
+```
+
 ## Cosmos DB Storage Patterns
 
 When working with Cosmos DB storage, understand these document types:
@@ -231,6 +259,7 @@ Document structure from storage:
 7. **Logging Timing** - Logging with `LogInformation` during UI rendering corrupts Spectre.Console output (use LogDebug instead)
 8. **UI Terminology** - "Quit" at thread menu logs out; "quit" in chat returns to thread menu (lowercase vs uppercase)
 9. **Empty Messages** - Chat history display must skip empty messages and tool calls to avoid display issues
+10. **Wrong RunAsync Overload** - Using `RunAsync(string)` doesn't support images; use `RunAsync(ChatMessage)` with content array for multimodal support
 
 ## When User Requests Changes
 
