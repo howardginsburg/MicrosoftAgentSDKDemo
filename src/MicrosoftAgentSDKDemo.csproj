@@ -35,6 +35,9 @@
     <!-- Azure Identity for AzureCliCredential -->
     <PackageReference Include="Azure.Identity" Version="1.17.1" />
     
+    <!-- Azure Resource Manager for authentication validation -->
+    <PackageReference Include="Azure.ResourceManager" Version="1.13.1" />
+    
     <!-- Microsoft Extensions for Hosting and Configuration -->
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.2" />
     <PackageReference Include="Microsoft.Extensions.Configuration" Version="10.0.2" />

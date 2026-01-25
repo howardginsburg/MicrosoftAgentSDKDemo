@@ -10,6 +10,7 @@ namespace MicrosoftAgentSDKDemo.Display;
 /// </summary>
 public interface IConsoleUI
 {
+    void DisplayLogo();
     Task<string> GetUsernameAsync();
     void DisplayGreeting(string greeting);
     Task<ThreadSelection> GetThreadSelectionAsync(Dictionary<string, string> threads, string username);
@@ -47,7 +48,7 @@ public class ConsoleUI : IConsoleUI
         _agentName = configuration["Application:AgentName"] ?? "Agent";
     }
 
-    public async Task<string> GetUsernameAsync()
+    public void DisplayLogo()
     {
         AnsiConsole.Clear();
         AnsiConsole.Write(
@@ -56,7 +57,10 @@ public class ConsoleUI : IConsoleUI
                 .Color(Color.Cyan1));
         
         AnsiConsole.WriteLine();
-        
+    }
+
+    public async Task<string> GetUsernameAsync()
+    {
         var username = AnsiConsole.Prompt(
             new TextPrompt<string>("[cyan1]Enter your username:[/]")
                 .PromptStyle("green")

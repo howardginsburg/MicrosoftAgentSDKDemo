@@ -70,6 +70,131 @@ bool shouldExitApp = false;
 // Main application loop - allows multiple users to log in sequentially
 while (!shouldExitApp)
 {
+    // Display application logo
+    consoleUI.DisplayLogo();
+    
+    // Verify Azure CLI login before proceeding
+    try
+    {
+        var credential = new AzureCliCredential();
+        
+        // Get the authenticated account username
+        var tokenRequestContext = new Azure.Core.TokenRequestContext(new[] { "https://management.azure.com/.default" });
+        var token = await credential.GetTokenAsync(tokenRequestContext, default);
+        
+        // Decode the JWT token to get the user information
+        string? userName = null;
+        try
+        {
+            var parts = token.Token.Split('.');
+            if (parts.Length >= 2)
+            {
+                var payload = parts[1];
+                
+                // Fix base64 padding
+                var remainder = payload.Length % 4;
+                if (remainder > 0)
+                {
+                    payload += new string('=', 4 - remainder);
+                }
+                
+                var jsonBytes = Convert.FromBase64String(payload);
+                var tokenJson = System.Text.Json.JsonDocument.Parse(jsonBytes);
+                
+                if (tokenJson.RootElement.TryGetProperty("upn", out var upn))
+                {
+                    userName = upn.GetString();
+                }
+                else if (tokenJson.RootElement.TryGetProperty("unique_name", out var uniqueName))
+                {
+                    userName = uniqueName.GetString();
+                }
+                else if (tokenJson.RootElement.TryGetProperty("email", out var email))
+                {
+                    userName = email.GetString();
+                }
+                
+                logger.LogDebug("Token claims parsed. User: {User}", userName ?? "not found in token");
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogDebug(ex, "Failed to parse JWT token for user information");
+        }
+        
+        // Use Azure Resource Manager to validate authentication and get tenant info
+        var armClient = new Azure.ResourceManager.ArmClient(credential);
+        var subscriptions = armClient.GetSubscriptions();
+        
+        // Attempt to get first subscription to validate authentication
+        Azure.ResourceManager.Resources.SubscriptionResource? subscription = null;
+        await foreach (var sub in subscriptions)
+        {
+            subscription = sub;
+            break;
+        }
+        
+        if (subscription != null)
+        {
+            var tenants = armClient.GetTenants();
+            Azure.ResourceManager.Resources.TenantResource? tenant = null;
+            await foreach (var t in tenants)
+            {
+                tenant = t;
+                break;
+            }
+            
+            if (!string.IsNullOrEmpty(userName))
+            {
+                AnsiConsole.MarkupLine($"[dim]✓ Authenticated as [cyan]{userName.EscapeMarkup()}[/][/]");
+            }
+            else
+            {
+                AnsiConsole.MarkupLine("[dim]✓ Azure CLI authenticated[/]");
+            }
+            AnsiConsole.MarkupLine($"[dim]  Subscription: [cyan]{subscription.Data.DisplayName}[/][/]");
+            if (tenant != null)
+            {
+                AnsiConsole.MarkupLine($"[dim]  Tenant: [cyan]{tenant.Data.TenantId}[/][/]");
+            }
+            AnsiConsole.WriteLine();
+            logger.LogDebug("Azure CLI authenticated | User: {User} | Subscription: {Subscription}", userName ?? "unknown", subscription.Data.DisplayName);
+        }
+        else
+        {
+            if (!string.IsNullOrEmpty(userName))
+            {
+                AnsiConsole.MarkupLine($"[dim]✓ Authenticated as [cyan]{userName.EscapeMarkup()}[/][/]");
+            }
+            else
+            {
+                AnsiConsole.MarkupLine("[dim]✓ Azure CLI authenticated[/]");
+            }
+            AnsiConsole.WriteLine();
+            logger.LogDebug("Azure CLI authenticated | User: {User}", userName ?? "unknown");
+        }
+    }
+    catch (Azure.Identity.CredentialUnavailableException)
+    {
+        AnsiConsole.MarkupLine("[red]✗ Azure CLI authentication failed[/]");
+        AnsiConsole.MarkupLine("[yellow]Please run 'az login' to authenticate with Azure before starting the application.[/]");
+        AnsiConsole.WriteLine();
+        logger.LogError("Azure CLI not authenticated. Application requires 'az login'.");
+        return;
+    }
+    catch (Azure.RequestFailedException ex) when (ex.Status == 401 || ex.Status == 403)
+    {
+        AnsiConsole.MarkupLine("[red]✗ Azure CLI authentication failed[/]");
+        AnsiConsole.MarkupLine("[yellow]Please run 'az login' to authenticate with Azure before starting the application.[/]");
+        AnsiConsole.WriteLine();
+        logger.LogError("Azure CLI not authenticated. Application requires 'az login'.");
+        return;
+    }
+    catch (Exception ex)
+    {
+        logger.LogWarning(ex, "Could not verify Azure CLI authentication status");
+    }
+
     // Get username
     var username = await consoleUI.GetUsernameAsync();
     var sessionStart = DateTime.UtcNow;
