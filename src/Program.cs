@@ -75,6 +75,16 @@ while (!shouldExitApp)
     var sessionStart = DateTime.UtcNow;
     logger.LogInformation("Session started | UserId: {UserId}", username);
 
+    // Display agent greeting
+    var greeting = await AnsiConsole.Status()
+        .Spinner(Spinner.Known.Dots)
+        .SpinnerStyle(Style.Parse("cyan"))
+        .StartAsync("Preparing...", async ctx => 
+        {
+            return await agentFactory.GetGreetingAsync(username);
+        });
+    consoleUI.DisplayGreeting(greeting);
+
     bool shouldLogout = false;
 
     // User session loop

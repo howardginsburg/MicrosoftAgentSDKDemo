@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Spectre.Console;
 using System.Text.RegularExpressions;
@@ -10,6 +11,7 @@ namespace MicrosoftAgentSDKDemo.Display;
 public interface IConsoleUI
 {
     Task<string> GetUsernameAsync();
+    void DisplayGreeting(string greeting);
     Task<ThreadSelection> GetThreadSelectionAsync(Dictionary<string, string> threads, string username);
     Task<(string Message, string? FilePaths)> GetFirstMessageWithAttachmentsAsync();
     Task<string> GetChatInputAsync(string username);
@@ -35,17 +37,21 @@ public enum ThreadSelectionType
 public class ConsoleUI : IConsoleUI
 {
     private readonly ILogger<ConsoleUI> _logger;
+    private readonly string _displayName;
+    private readonly string _agentName;
 
-    public ConsoleUI(ILogger<ConsoleUI> logger)
+    public ConsoleUI(ILogger<ConsoleUI> logger, IConfiguration configuration)
     {
         _logger = logger;
+        _displayName = configuration["Application:DisplayName"] ?? "Agent SDK Demo";
+        _agentName = configuration["Application:AgentName"] ?? "Agent";
     }
 
     public async Task<string> GetUsernameAsync()
     {
         AnsiConsole.Clear();
         AnsiConsole.Write(
-            new FigletText("Agent SDK Demo")
+            new FigletText(_displayName)
                 .Centered()
                 .Color(Color.Cyan1));
         
@@ -58,6 +64,22 @@ public class ConsoleUI : IConsoleUI
                 .Validate(name => !string.IsNullOrWhiteSpace(name)));
         
         return await Task.FromResult(username);
+    }
+
+    public void DisplayGreeting(string greeting)
+    {
+        AnsiConsole.WriteLine();
+        
+        var panel = new Panel(new Markup(greeting.EscapeMarkup()))
+        {
+            Header = new PanelHeader($"[bold blue]🤖 {_agentName.EscapeMarkup()}[/]", Justify.Left),
+            Border = BoxBorder.Rounded,
+            BorderStyle = new Style(Color.Blue),
+            Padding = new Padding(2, 1)
+        };
+        
+        AnsiConsole.Write(panel);
+        AnsiConsole.WriteLine();
     }
 
     public async Task<ThreadSelection> GetThreadSelectionAsync(Dictionary<string, string> threads, string username)
@@ -177,7 +199,7 @@ public class ConsoleUI : IConsoleUI
             {
                 var panel = new Panel(new Markup(text.EscapeMarkup()))
                 {
-                    Header = new PanelHeader("[bold blue]🤖 Agent[/]", Justify.Left),
+                    Header = new PanelHeader($"[bold blue]🤖 {_agentName.EscapeMarkup()}[/]", Justify.Left),
                     Border = BoxBorder.Rounded,
                     BorderStyle = new Style(Color.Blue),
                     Padding = new Padding(1, 0)
@@ -228,7 +250,7 @@ public class ConsoleUI : IConsoleUI
         {
             var panel = new Panel(new Markup(response.EscapeMarkup()))
             {
-                Header = new PanelHeader("[bold blue]🤖 Agent Response[/]", Justify.Left),
+                Header = new PanelHeader($"[bold blue]🤖 {_agentName.EscapeMarkup()}[/]", Justify.Left),
                 Border = BoxBorder.Rounded,
                 BorderStyle = new Style(Color.Blue),
                 Padding = new Padding(2, 1)

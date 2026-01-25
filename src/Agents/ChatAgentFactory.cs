@@ -17,6 +17,7 @@ namespace MicrosoftAgentSDKDemo.Agents;
 public interface IAgentFactory
 {
     Task<AIAgent> CreateAgentAsync(string userId);
+    Task<string> GetGreetingAsync(string username);
 }
 
 public class ChatAgentFactory : IAgentFactory
@@ -27,6 +28,7 @@ public class ChatAgentFactory : IAgentFactory
     private readonly ILoggerFactory _loggerFactory;
     private readonly ILogger<ChatAgentFactory> _logger;
     private readonly IImageGenerationService _imageService;
+    private readonly string _agentNameFormat;
 
     public ChatAgentFactory(
         IConfiguration configuration,
@@ -42,6 +44,7 @@ public class ChatAgentFactory : IAgentFactory
         _loggerFactory = loggerFactory;
         _logger = logger;
         _imageService = imageService;
+        _agentNameFormat = configuration["Application:AgentNameFormat"] ?? "Agent-{0}";
     }
 
     public async Task<AIAgent> CreateAgentAsync(string userId)
@@ -110,7 +113,7 @@ public class ChatAgentFactory : IAgentFactory
         // Convert to agent with chat message store for persistence
         var agent = reasoningClient.AsAIAgent(new ChatClientAgentOptions
             {
-                Name = $"Agent-{userId}",
+                Name = string.Format(_agentNameFormat, userId),
                 ChatOptions = chatOptions,
                 ChatMessageStoreFactory = (ctx, ct) => new ValueTask<ChatMessageStore>(
                     new CosmosDbChatMessageStore(
@@ -125,5 +128,31 @@ public class ChatAgentFactory : IAgentFactory
             userId, deploymentName, allTools.Count);
         
         return agent;
+    }
+
+    public async Task<string> GetGreetingAsync(string username)
+    {
+        var openAIConfig = _configuration.GetSection("AzureOpenAI");
+        var endpoint = openAIConfig["Endpoint"] ?? throw new InvalidOperationException("AzureOpenAI Endpoint not configured");
+        var deploymentName = openAIConfig["DeploymentName"] ?? "gpt-4";
+        var agentName = _configuration["Application:AgentName"] ?? "Agent";
+
+        var credential = new AzureCliCredential();
+        var azureOpenAIClient = new AzureOpenAIClient(new Uri(endpoint), credential);
+        var chatClient = azureOpenAIClient.GetChatClient(deploymentName).AsIChatClient();
+
+        var greetingPrompt = $"You are {agentName}. Greet the user named {username} warmly and briefly introduce yourself in 1-2 sentences. Be friendly and professional.";
+        
+        var messages = new List<ChatMessage>
+        {
+            new ChatMessage(ChatRole.System, greetingPrompt)
+        };
+        
+        var response = await chatClient.GetResponseAsync(messages);
+        
+        _logger.LogDebug("Generated greeting for user: {Username}", username);
+        
+        var greetingText = response.Messages.LastOrDefault()?.Text ?? $"Hello {username}, I'm {agentName}. How can I assist you today?";
+        return greetingText;
     }
 }

@@ -1,4 +1,9 @@
 {
+  "Application": {
+    "DisplayName": "Agent SDK Demo",
+    "AgentName": "Agent",
+    "AgentNameFormat": "Agent-{0}"
+  },
   "Logging": {
     "LogLevel": {
       "Default": "Information",
