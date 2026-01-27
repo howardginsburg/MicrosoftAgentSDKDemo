@@ -29,6 +29,9 @@ public class ChatAgentFactory : IAgentFactory
     private readonly ILogger<ChatAgentFactory> _logger;
     private readonly IImageGenerationService _imageService;
     private readonly string _agentNameFormat;
+    private readonly AzureOpenAIClient _azureOpenAIClient;
+    private readonly string _deploymentName;
+    private readonly string _systemInstructions;
 
     public ChatAgentFactory(
         IConfiguration configuration,
@@ -45,13 +48,11 @@ public class ChatAgentFactory : IAgentFactory
         _logger = logger;
         _imageService = imageService;
         _agentNameFormat = configuration["Application:AgentNameFormat"] ?? "Agent-{0}";
-    }
-
-    public async Task<AIAgent> CreateAgentAsync(string userId)
-    {
-        var openAIConfig = _configuration.GetSection("AzureOpenAI");
+        
+        // Initialize Azure OpenAI client once
+        var openAIConfig = configuration.GetSection("AzureOpenAI");
         var endpoint = openAIConfig["Endpoint"] ?? throw new InvalidOperationException("AzureOpenAI Endpoint not configured");
-        var deploymentName = openAIConfig["DeploymentName"] ?? "gpt-4";
+        _deploymentName = openAIConfig["DeploymentName"] ?? "gpt-4";
         var systemInstructionsPath = openAIConfig["SystemInstructionsFile"] ?? "prompts/system-instructions.txt";
         
         // Load system instructions from file
@@ -60,12 +61,19 @@ public class ChatAgentFactory : IAgentFactory
         {
             throw new InvalidOperationException($"System instructions file not found: {fullPath}");
         }
-        var systemInstructions = await File.ReadAllTextAsync(fullPath);
-        _logger.LogDebug("Loaded system instructions from {Path} ({Length} characters)", systemInstructionsPath, systemInstructions.Length);
-
+        _systemInstructions = File.ReadAllText(fullPath);
+        _logger.LogDebug("Loaded system instructions from {Path} ({Length} characters)", systemInstructionsPath, _systemInstructions.Length);
+        
+        // Create shared Azure OpenAI client with Azure CLI credentials
         var credential = new AzureCliCredential();
-        var azureOpenAIClient = new AzureOpenAIClient(new Uri(endpoint), credential);
+        _azureOpenAIClient = new AzureOpenAIClient(new Uri(endpoint), credential);
+        
+        _logger.LogDebug("ChatAgentFactory initialized | Endpoint: {Endpoint} | Deployment: {DeploymentName}", 
+            endpoint, _deploymentName);
+    }
 
+    public async Task<AIAgent> CreateAgentAsync(string userId)
+    {
         // Get MCP tools from all configured MCP servers
         var mcpTools = await _mcpServerManager.GetToolsAsync();
         
@@ -96,13 +104,13 @@ public class ChatAgentFactory : IAgentFactory
         // Create agent with all tools and chat message store for persistence
         var chatOptions = new ChatOptions
         {
-            Instructions = systemInstructions,
+            Instructions = _systemInstructions,
             Tools = allTools.ToArray()
         };
 
-        // Create base chat client
-        var baseChatClient = azureOpenAIClient
-            .GetChatClient(deploymentName)
+        // Create base chat client from shared Azure OpenAI client
+        var baseChatClient = _azureOpenAIClient
+            .GetChatClient(_deploymentName)
             .AsIChatClient();
 
         // Wrap with reasoning display client to show agent thinking process
@@ -125,21 +133,17 @@ public class ChatAgentFactory : IAgentFactory
             });
 
         _logger.LogDebug("AIAgent created | UserId: {UserId} | Deployment: {DeploymentName} | ToolCount: {ToolCount}",
-            userId, deploymentName, allTools.Count);
+            userId, _deploymentName, allTools.Count);
         
         return agent;
     }
 
     public async Task<string> GetGreetingAsync(string username)
     {
-        var openAIConfig = _configuration.GetSection("AzureOpenAI");
-        var endpoint = openAIConfig["Endpoint"] ?? throw new InvalidOperationException("AzureOpenAI Endpoint not configured");
-        var deploymentName = openAIConfig["DeploymentName"] ?? "gpt-4";
         var agentName = _configuration["Application:AgentName"] ?? "Agent";
 
-        var credential = new AzureCliCredential();
-        var azureOpenAIClient = new AzureOpenAIClient(new Uri(endpoint), credential);
-        var chatClient = azureOpenAIClient.GetChatClient(deploymentName).AsIChatClient();
+        // Use the shared Azure OpenAI client for greeting generation
+        var chatClient = _azureOpenAIClient.GetChatClient(_deploymentName).AsIChatClient();
 
         var greetingPrompt = $"You are {agentName}. Greet the user named {username} warmly and briefly introduce yourself in 1-2 sentences. Be friendly and professional.";
         
