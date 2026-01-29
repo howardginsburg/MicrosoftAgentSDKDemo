@@ -13,8 +13,22 @@ using MicrosoftAgentSDKDemo.Display;
 using MicrosoftAgentSDKDemo.Storage;
 using MicrosoftAgentSDKDemo.Integration;
 using Spectre.Console;
+using Serilog;
+
+// Configure Serilog with timestamped log file
+var logsDirectory = Path.Combine(AppContext.BaseDirectory, "logs");
+Directory.CreateDirectory(logsDirectory);
+var logFileName = $"agent_{DateTime.Now:yyyyMMdd_HHmmss}.log";
+
+Log.Logger = new LoggerConfiguration()
+    .MinimumLevel.Debug()
+    .WriteTo.File(
+        Path.Combine(logsDirectory, logFileName),
+        outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff} [{Level:u3}] {SourceContext}: {Message:lj}{NewLine}{Exception}")
+    .CreateLogger();
 
 var host = Host.CreateDefaultBuilder(args)
+    .UseSerilog()
     .ConfigureAppConfiguration((context, config) =>
     {
         config
@@ -64,6 +78,7 @@ var authService = host.Services.GetRequiredService<IAzureAuthenticationService>(
 var sessionManager = host.Services.GetRequiredService<AgentSessionManager>();
 
 logger.LogInformation("Application started | Framework: Microsoft Agent Framework");
+logger.LogInformation("Log file: {LogFile}", Path.Combine(logsDirectory, logFileName));
 
 bool shouldExitApp = false;
 
@@ -88,6 +103,7 @@ while (!shouldExitApp)
 }
 
 logger.LogInformation("Application exiting");
+Log.CloseAndFlush();
 
 await host.RunAsync();
 

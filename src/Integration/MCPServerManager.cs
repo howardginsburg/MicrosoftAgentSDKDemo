@@ -16,6 +16,7 @@ namespace MicrosoftAgentSDKDemo.Integration;
 public interface IMCPServerManager
 {
     Task<IList<AITool>> GetToolsAsync();
+    Task<IDictionary<string, IList<AITool>>> GetToolsByCategoryAsync();
     Task DisposeAsync();
 }
 
@@ -43,12 +44,21 @@ public class MCPServerManager : IMCPServerManager
     /// </summary>
     public async Task<IList<AITool>> GetToolsAsync()
     {
-        var allTools = new List<AITool>();
+        var toolsByCategory = await GetToolsByCategoryAsync();
+        return toolsByCategory.Values.SelectMany(t => t).ToList();
+    }
+
+    /// <summary>
+    /// Connects to all configured MCP servers and retrieves available tools grouped by server name.
+    /// </summary>
+    public async Task<IDictionary<string, IList<AITool>>> GetToolsByCategoryAsync()
+    {
+        var toolsByCategory = new Dictionary<string, IList<AITool>>();
 
         if (_configuration.Servers.Count == 0)
         {
             _logger.LogWarning("No MCP servers configured. Agent will run without MCP tools.");
-            return allTools;
+            return toolsByCategory;
         }
 
         foreach (var serverConfig in _configuration.Servers)
@@ -68,7 +78,10 @@ public class MCPServerManager : IMCPServerManager
                     _ => throw new InvalidOperationException($"Unknown transport type: {serverConfig.TransportType}")
                 };
 
-                allTools.AddRange(tools);
+                if (tools.Any())
+                {
+                    toolsByCategory[serverConfig.Name] = tools.ToList();
+                }
             }
             catch (Exception ex)
             {
@@ -77,17 +90,18 @@ public class MCPServerManager : IMCPServerManager
             }
         }
 
-        if (allTools.Count > 0)
+        var totalTools = toolsByCategory.Values.Sum(t => t.Count);
+        if (totalTools > 0)
         {
             _logger.LogInformation("Successfully loaded {ToolCount} MCP tool(s) from {ServerCount} server(s)", 
-                allTools.Count, _mcpClients.Count);
+                totalTools, _mcpClients.Count);
         }
         else
         {
             _logger.LogWarning("No MCP tools available - all configured servers failed or returned no tools");
         }
 
-        return allTools;
+        return toolsByCategory;
     }
 
     /// <summary>

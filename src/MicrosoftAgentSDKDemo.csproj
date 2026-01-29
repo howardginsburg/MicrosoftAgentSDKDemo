@@ -56,6 +56,10 @@
     <!-- Model Context Protocol SDK -->
     <PackageReference Include="ModelContextProtocol.Core" Version="0.2.0-preview.3" />
     <PackageReference Include="Spectre.Console" Version="0.54.0" />
+    
+    <!-- Serilog for file logging -->
+    <PackageReference Include="Serilog.Extensions.Hosting" Version="8.0.0" />
+    <PackageReference Include="Serilog.Sinks.File" Version="6.0.0" />
   </ItemGroup>
 
 </Project>

@@ -78,28 +78,42 @@ public class AgentSessionManager
                     continue;
                 }
 
-                // Create base agent
-                var baseAgent = await _agentFactory.CreateAgentAsync(username);
-                
-                // Wrap with AIHostAgent for automatic thread persistence
-                var agent = new AIHostAgent(baseAgent, _threadStore);
-
                 AgentThread? thread = null;
                 string? threadId = null;
 
                 if (selection.Type == ThreadSelectionType.New && !string.IsNullOrWhiteSpace(selection.FirstMessage))
                 {
+                    // Create agent with tool routing based on the first message
+                    var baseAgent = await AnsiConsole.Status()
+                        .Spinner(Spinner.Known.Dots)
+                        .SpinnerStyle(Style.Parse("cyan"))
+                        .StartAsync("🔧 Selecting relevant tools...", async ctx => 
+                        {
+                            return await _agentFactory.CreateAgentAsync(username, selection.FirstMessage);
+                        });
+                    
+                    var agent = new AIHostAgent(baseAgent, _threadStore);
                     (thread, threadId) = await HandleNewThreadAsync(agent, username, selection);
+                    
+                    // Chat loop for selected thread
+                    if (thread != null && threadId != null)
+                    {
+                        await RunChatLoopAsync(agent, thread, threadId, username);
+                    }
                 }
                 else if (selection.Type == ThreadSelectionType.Existing && selection.ThreadId != null)
                 {
+                    // For existing threads, load thread first then route tools per-message in chat loop
+                    var baseAgent = await _agentFactory.CreateAgentAsync(username);
+                    var agent = new AIHostAgent(baseAgent, _threadStore);
+                    
                     (thread, threadId) = await HandleExistingThreadAsync(agent, username, selection.ThreadId);
-                }
-
-                // Chat loop for selected thread
-                if (thread != null && threadId != null)
-                {
-                    await RunChatLoopAsync(agent, thread, threadId, username);
+                    
+                    // Chat loop for selected thread (will re-route tools per message)
+                    if (thread != null && threadId != null)
+                    {
+                        await RunChatLoopAsync(agent, thread, threadId, username);
+                    }
                 }
             }
             catch (Exception ex)
@@ -239,6 +253,18 @@ public class AgentSessionManager
             {
                 _logger.LogDebug("Processing message | UserId: {UserId} | ThreadId: {ThreadId}", username, threadId);
                 
+                // Re-route tools based on current message to support cross-MCP queries
+                var baseAgent = await AnsiConsole.Status()
+                    .Spinner(Spinner.Known.Dots)
+                    .SpinnerStyle(Style.Parse("cyan"))
+                    .StartAsync("🔧 Selecting relevant tools...", async ctx => 
+                    {
+                        return await _agentFactory.CreateAgentAsync(username, input);
+                    });
+                
+                // Create new host agent with updated tools but same thread store
+                var routedAgent = new AIHostAgent(baseAgent, _threadStore);
+                
                 // Create simple text message (file attachments only available when starting new conversation)
                 var chatMessage = new ChatMessage(ChatRole.User, input);
                 
@@ -248,11 +274,11 @@ public class AgentSessionManager
                     .SpinnerStyle(Style.Parse("cyan"))
                     .StartAsync("🤔 Agent is thinking...", async ctx => 
                     {
-                        return await agent.RunAsync(chatMessage, thread);
+                        return await routedAgent.RunAsync(chatMessage, thread);
                     });
                 
                 // Explicitly save thread after each interaction to persist conversation history
-                await _threadStore.SaveThreadAsync(agent, threadId, thread);
+                await _threadStore.SaveThreadAsync(routedAgent, threadId, thread);
                 
                 _consoleUI.DisplayAgentResponse(response.Text);
             }

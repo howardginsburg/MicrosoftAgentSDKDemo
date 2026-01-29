@@ -16,7 +16,7 @@ namespace MicrosoftAgentSDKDemo.Agents;
 /// </summary>
 public interface IAgentFactory
 {
-    Task<AIAgent> CreateAgentAsync(string userId);
+    Task<AIAgent> CreateAgentAsync(string userId, string? userQuery = null);
     Task<string> GetGreetingAsync(string username);
 }
 
@@ -72,40 +72,64 @@ public class ChatAgentFactory : IAgentFactory
             endpoint, _deploymentName);
     }
 
-    public async Task<AIAgent> CreateAgentAsync(string userId)
+    public async Task<AIAgent> CreateAgentAsync(string userId, string? userQuery = null)
     {
-        // Get MCP tools from all configured MCP servers
-        var mcpTools = await _mcpServerManager.GetToolsAsync();
+        // Get MCP tools grouped by server/category
+        var toolsByCategory = await _mcpServerManager.GetToolsByCategoryAsync();
         
-        if (mcpTools.Any())
-        {
-            _logger.LogDebug("Agent will have access to {ToolCount} MCP tools: {ToolNames}", 
-                mcpTools.Count, string.Join(", ", mcpTools.Select(t => t.Name)));
-        }
-        else
-        {
-            _logger.LogWarning("No MCP tools available - agent will run without external tool access");
-        }
-
-        // Create image generation tool
+        // Add image generation as its own category
         var imageGenerationTool = AIFunctionFactory.Create(
             async (string prompt, string size = "1024x1024", string quality = "standard") =>
             {
                 var result = await _imageService.GenerateImageAsync(prompt, size, quality);
-                // Return a structured message that includes BOTH the success message AND the path
                 return $"[IMAGE_GENERATED]Saved to: {result.LocalPath}[/IMAGE_GENERATED]";
             },
             name: "generate_image",
             description: "Generates an image based on a text prompt using DALL-E. Use this when the user asks to create, generate, or draw an image.");
+        
+        toolsByCategory["Image Generation"] = new List<AITool> { imageGenerationTool };
 
-        // Combine all tools
-        var allTools = new List<AITool>(mcpTools) { imageGenerationTool };
+        // Use tool routing if we have a user query and too many tools
+        IList<AITool> selectedTools;
+        var totalTools = toolsByCategory.Values.Sum(t => t.Count);
+        
+        if (!string.IsNullOrEmpty(userQuery) && totalTools > 128)
+        {
+            var toolRouter = new ToolRoutingService(
+                _loggerFactory.CreateLogger<ToolRoutingService>(),
+                _azureOpenAIClient,
+                _deploymentName);
+            
+            selectedTools = await toolRouter.SelectRelevantToolsAsync(userQuery, toolsByCategory);
+            
+            // Always ensure image generation is available if query mentions image/draw/generate
+            if (ContainsImageKeywords(userQuery) && !selectedTools.Contains(imageGenerationTool))
+            {
+                selectedTools.Add(imageGenerationTool);
+            }
+        }
+        else
+        {
+            // Under the limit or no query - use all tools
+            selectedTools = toolsByCategory.Values.SelectMany(t => t).ToList();
+        }
 
-        // Create agent with all tools and chat message store for persistence
+        if (selectedTools.Any())
+        {
+            _logger.LogDebug("Agent will have access to {ToolCount} tools: {ToolNames}", 
+                selectedTools.Count, string.Join(", ", selectedTools.Take(10).Select(t => t.Name)) + 
+                (selectedTools.Count > 10 ? $"... and {selectedTools.Count - 10} more" : ""));
+        }
+        else
+        {
+            _logger.LogInformation("No tools selected for this query - agent will use general knowledge");
+        }
+
+        // Create agent with selected tools and chat message store for persistence
         var chatOptions = new ChatOptions
         {
             Instructions = _systemInstructions,
-            Tools = allTools.ToArray()
+            Tools = selectedTools.ToArray()
         };
 
         // Create base chat client from shared Azure OpenAI client
@@ -133,9 +157,15 @@ public class ChatAgentFactory : IAgentFactory
             });
 
         _logger.LogDebug("AIAgent created | UserId: {UserId} | Deployment: {DeploymentName} | ToolCount: {ToolCount}",
-            userId, _deploymentName, allTools.Count);
+            userId, _deploymentName, selectedTools.Count);
         
         return agent;
+    }
+
+    private static bool ContainsImageKeywords(string query)
+    {
+        var keywords = new[] { "image", "picture", "draw", "generate", "create", "illustration", "artwork", "photo" };
+        return keywords.Any(kw => query.Contains(kw, StringComparison.OrdinalIgnoreCase));
     }
 
     public async Task<string> GetGreetingAsync(string username)

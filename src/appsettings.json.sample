@@ -51,6 +51,16 @@
         "TimeoutSeconds": 60,
         "EnvironmentVariables": {},
         "WorkingDirectory": null
+      },
+      {
+        "Name": "Azure DevOps",
+        "TransportType": "Stdio",
+        "Command": "npx",
+        "Arguments": ["-y", "@azure-devops/mcp", "your-organization", "--authentication", "azcli"],
+        "Enabled": false,
+        "TimeoutSeconds": 60,
+        "EnvironmentVariables": {},
+        "WorkingDirectory": null
       }
     ]
   }
