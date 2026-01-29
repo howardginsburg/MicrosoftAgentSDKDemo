@@ -46,6 +46,16 @@ public class CosmosDbAgentThreadStore : AgentThreadStore
             var json = thread.Serialize();
             var key = GetThreadKey(threadId);
             
+            // Extract chat history key from serialized thread for later use
+            if (json.ValueKind == JsonValueKind.Object &&
+                json.TryGetProperty("storeState", out var storeStateElement) &&
+                storeStateElement.ValueKind == JsonValueKind.String)
+            {
+                LastChatHistoryKey = storeStateElement.GetString();
+                _logger.LogDebug("Updated LastChatHistoryKey after save | ThreadId: {ThreadId} | Key: {Key}", 
+                    threadId, LastChatHistoryKey);
+            }
+            
             // Create a wrapper object with id and userId for Cosmos DB
             var document = new Dictionary<string, object>
             {
