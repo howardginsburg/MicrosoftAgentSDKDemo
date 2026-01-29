@@ -73,31 +73,14 @@ internal sealed class CosmosDbChatMessageStore : ChatMessageStore
             {
                 _logger.LogDebug("Found chat history document | DocType: {DocType}", doc?.GetType().Name ?? "null");
                 
-                // Handle both JsonElement and Dictionary<string, object> formats
-                JsonElement docElement;
-                
-                if (doc is JsonElement jsonElem)
-                {
-                    docElement = jsonElem;
-                }
-                else if (doc is Dictionary<string, object> dict)
-                {
-                    docElement = JsonSerializer.SerializeToElement(dict);
-                }
-                else
+                var docElement = CosmosDbDocumentHelper.ToUnwrappedJsonElement(doc);
+                if (docElement == null)
                 {
                     _logger.LogWarning("Chat history document is unexpected type: {Type}", doc?.GetType().FullName ?? "null");
                     return [];
                 }
                 
-                // CosmosDbPartitionedStorage wraps documents in a "document" property
-                if (docElement.ValueKind == JsonValueKind.Object && docElement.TryGetProperty("document", out var innerDocElement))
-                {
-                    _logger.LogDebug("Found nested document property, unwrapping");
-                    docElement = innerDocElement;
-                }
-                
-                if (docElement.ValueKind == JsonValueKind.Object && docElement.TryGetProperty("messages", out var messagesElement))
+                if (docElement.Value.ValueKind == JsonValueKind.Object && docElement.Value.TryGetProperty("messages", out var messagesElement))
                 {
                     var messages = JsonSerializer.Deserialize<List<ChatMessage>>(messagesElement, s_jsonOptions);
                     _logger.LogDebug("Retrieved {Count} messages from chat history | ThreadDbKey: {ThreadDbKey}", messages?.Count ?? 0, ThreadDbKey);
@@ -155,31 +138,12 @@ internal sealed class CosmosDbChatMessageStore : ChatMessageStore
             {
                 _logger.LogDebug("Found existing chat history document");
                 
-                // Handle both JsonElement and Dictionary<string, object> formats
-                JsonElement docElement;
-                
-                if (doc is JsonElement jsonElem)
-                {
-                    docElement = jsonElem;
-                }
-                else if (doc is Dictionary<string, object> dict)
-                {
-                    docElement = JsonSerializer.SerializeToElement(dict);
-                }
-                else
+                var docElement = CosmosDbDocumentHelper.ToUnwrappedJsonElement(doc);
+                if (docElement == null)
                 {
                     _logger.LogWarning("Existing chat history document is unexpected type: {Type}", doc?.GetType().FullName ?? "null");
-                    docElement = default;
                 }
-                
-                // CosmosDbPartitionedStorage wraps documents in a "document" property
-                if (docElement.ValueKind == JsonValueKind.Object && docElement.TryGetProperty("document", out var innerDocElement))
-                {
-                    _logger.LogDebug("Found nested document property when reading existing messages, unwrapping");
-                    docElement = innerDocElement;
-                }
-                
-                if (docElement.ValueKind == JsonValueKind.Object && docElement.TryGetProperty("messages", out var messagesElement))
+                else if (docElement.Value.ValueKind == JsonValueKind.Object && docElement.Value.TryGetProperty("messages", out var messagesElement))
                 {
                     existingMessages = JsonSerializer.Deserialize<List<ChatMessage>>(messagesElement, s_jsonOptions) ?? new List<ChatMessage>();
                     _logger.LogDebug("Loaded {Count} existing messages", existingMessages.Count);
@@ -257,28 +221,13 @@ internal sealed class CosmosDbChatMessageStore : ChatMessageStore
 
             if (chatHistoryDocument.TryGetValue(threadDbKey, out var doc))
             {
-                JsonElement docElement;
-                
-                if (doc is JsonElement jsonElem)
-                {
-                    docElement = jsonElem;
-                }
-                else if (doc is Dictionary<string, object> dict)
-                {
-                    docElement = JsonSerializer.SerializeToElement(dict);
-                }
-                else
+                var docElement = CosmosDbDocumentHelper.ToUnwrappedJsonElement(doc);
+                if (docElement == null)
                 {
                     return [];
                 }
 
-                // Unwrap nested document structure
-                if (docElement.TryGetProperty("document", out var nestedDoc))
-                {
-                    docElement = nestedDoc;
-                }
-
-                if (docElement.TryGetProperty("messages", out var messagesElement))
+                if (docElement.Value.TryGetProperty("messages", out var messagesElement))
                 {
                     var messages = JsonSerializer.Deserialize<List<ChatMessage>>(messagesElement.GetRawText(), s_jsonOptions) ?? new List<ChatMessage>();
                     return messages;

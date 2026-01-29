@@ -80,19 +80,8 @@ public class CosmosDbAgentThreadStore : AgentThreadStore
 
             if (items != null && items.TryGetValue(key, out var value))
             {
-                // Try to handle both JsonElement and Dictionary<string, object> formats
-                JsonElement docElement;
-                
-                if (value is JsonElement jsonElem)
-                {
-                    docElement = jsonElem;
-                }
-                else if (value is Dictionary<string, object> dict)
-                {
-                    // Convert Dictionary to JsonElement
-                    docElement = JsonSerializer.SerializeToElement(dict);
-                }
-                else
+                var docElement = CosmosDbDocumentHelper.ToJsonElement(value);
+                if (docElement == null)
                 {
                     _logger.LogError("Thread document is unexpected type: {Type} | ThreadId: {ThreadId}", 
                         value?.GetType().FullName ?? "null", threadId);
@@ -100,9 +89,9 @@ public class CosmosDbAgentThreadStore : AgentThreadStore
                 }
                 
                 // Extract threadData from the wrapper document
-                if (docElement.ValueKind == JsonValueKind.Object)
+                if (docElement.Value.ValueKind == JsonValueKind.Object)
                 {
-                    if (docElement.TryGetProperty("threadData", out var threadDataElement))
+                    if (docElement.Value.TryGetProperty("threadData", out var threadDataElement))
                     {
                         // Extract chat history key from threadData.storeState
                         if (threadDataElement.ValueKind == JsonValueKind.Object &&
@@ -126,7 +115,7 @@ public class CosmosDbAgentThreadStore : AgentThreadStore
                 }
                 
                 _logger.LogError("Thread document missing 'threadData' property or not an object | ThreadId: {ThreadId} | Kind: {Kind}", 
-                    threadId, docElement.ValueKind);
+                    threadId, docElement.Value.ValueKind);
                 throw new InvalidOperationException($"Thread {threadId} has invalid format");
             }
 
@@ -155,35 +144,17 @@ public class CosmosDbAgentThreadStore : AgentThreadStore
             {
                 _logger.LogDebug("Found index document | ValueType: {ValueType}", value?.GetType().Name ?? "null");
                 
-                // Try to handle both JsonElement and Dictionary<string, object> formats
-                JsonElement docElement;
-                
-                if (value is JsonElement jsonElem)
-                {
-                    docElement = jsonElem;
-                }
-                else if (value is Dictionary<string, object> dict)
-                {
-                    // Convert Dictionary to JsonElement
-                    docElement = JsonSerializer.SerializeToElement(dict);
-                }
-                else
+                var docElement = CosmosDbDocumentHelper.ToUnwrappedJsonElement(value);
+                if (docElement == null)
                 {
                     _logger.LogWarning("Index document is unexpected type: {Type} | UserId: {UserId}", value?.GetType().FullName ?? "null", userId);
                     return new Dictionary<string, string>();
                 }
                 
-                // Check if this is the wrapped format from CosmosDbPartitionedStorage
-                if (docElement.TryGetProperty("document", out var nestedDoc))
-                {
-                    _logger.LogDebug("Unwrapping nested 'document' property");
-                    docElement = nestedDoc;
-                }
-                
-                if (docElement.ValueKind == JsonValueKind.Object)
+                if (docElement.Value.ValueKind == JsonValueKind.Object)
                 {
                     // Try new format with metadata first
-                    if (docElement.TryGetProperty("threads", out var threadsElement))
+                    if (docElement.Value.TryGetProperty("threads", out var threadsElement))
                     {
                         var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
                         var threads = JsonSerializer.Deserialize<List<ThreadMetadata>>(threadsElement.GetRawText(), options) ?? new List<ThreadMetadata>();
@@ -191,7 +162,7 @@ public class CosmosDbAgentThreadStore : AgentThreadStore
                         return threads.Take(limit).ToDictionary(t => t.ThreadId, t => t.Title);
                     }
                     // Fallback to old format with just IDs
-                    else if (docElement.TryGetProperty("threadIds", out var threadIdsElement))
+                    else if (docElement.Value.TryGetProperty("threadIds", out var threadIdsElement))
                     {
                         var threadIds = JsonSerializer.Deserialize<List<string>>(threadIdsElement.GetRawText()) ?? new List<string>();
                         _logger.LogInformation("Retrieved {Count} thread IDs (old format) for user {UserId}", threadIds.Count, userId);
@@ -204,7 +175,7 @@ public class CosmosDbAgentThreadStore : AgentThreadStore
                 }
                 else
                 {
-                    _logger.LogWarning("Index document JsonElement is not an object, it's {Kind} | UserId: {UserId}", docElement.ValueKind, userId);
+                    _logger.LogWarning("Index document JsonElement is not an object, it's {Kind} | UserId: {UserId}", docElement.Value.ValueKind, userId);
                 }
             }
             else
@@ -232,42 +203,22 @@ public class CosmosDbAgentThreadStore : AgentThreadStore
             List<ThreadMetadata> threads;
             if (items != null && items.TryGetValue(indexKey, out var value))
             {
-                // Try to handle both JsonElement and Dictionary<string, object> formats
-                JsonElement docElement;
-                
-                if (value is JsonElement jsonElem)
-                {
-                    docElement = jsonElem;
-                }
-                else if (value is Dictionary<string, object> dict)
-                {
-                    // Convert Dictionary to JsonElement
-                    docElement = JsonSerializer.SerializeToElement(dict);
-                }
-                else
+                var docElement = CosmosDbDocumentHelper.ToUnwrappedJsonElement(value);
+                if (docElement == null)
                 {
                     _logger.LogWarning("Unexpected index document type when adding thread: {Type}", value?.GetType().FullName ?? "null");
                     threads = new List<ThreadMetadata>();
-                    docElement = default;
                 }
-                
-                // Check if this is the wrapped format from CosmosDbPartitionedStorage
-                if (docElement.ValueKind == JsonValueKind.Object && docElement.TryGetProperty("document", out var nestedDoc))
-                {
-                    _logger.LogDebug("Unwrapping nested 'document' property when adding thread");
-                    docElement = nestedDoc;
-                }
-                
-                if (docElement.ValueKind == JsonValueKind.Object)
+                else if (docElement.Value.ValueKind == JsonValueKind.Object)
                 {
                     // Try new format first
-                    if (docElement.TryGetProperty("threads", out var threadsElement))
+                    if (docElement.Value.TryGetProperty("threads", out var threadsElement))
                     {
                         var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
                         threads = JsonSerializer.Deserialize<List<ThreadMetadata>>(threadsElement.GetRawText(), options) ?? new List<ThreadMetadata>();
                     }
                     // Migrate from old format
-                    else if (docElement.TryGetProperty("threadIds", out var threadIdsElement))
+                    else if (docElement.Value.TryGetProperty("threadIds", out var threadIdsElement))
                     {
                         var oldThreadIds = JsonSerializer.Deserialize<List<string>>(threadIdsElement.GetRawText()) ?? new List<string>();
                         threads = oldThreadIds.Select(id => new ThreadMetadata 

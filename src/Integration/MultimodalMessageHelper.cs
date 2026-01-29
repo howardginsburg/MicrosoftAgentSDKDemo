@@ -1,27 +1,19 @@
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
-using Microsoft.Extensions.Logging;
 
 namespace MicrosoftAgentSDKDemo.Integration;
 
 /// <summary>
-/// Helper service for creating multimodal ChatMessages with file attachments.
+/// Extension methods for creating multimodal ChatMessages with file attachments.
 /// Supports both text files and images through proper ChatMessage content array.
 /// </summary>
-public class MultimodalMessageHelper
+public static class MultimodalMessageExtensions
 {
-    private readonly ILogger<MultimodalMessageHelper> _logger;
-
-    public MultimodalMessageHelper(ILogger<MultimodalMessageHelper> logger)
-    {
-        _logger = logger;
-    }
-
     /// <summary>
     /// Creates a ChatMessage with text and attachments (text files and images).
     /// Uses the ChatMessage content array for proper multimodal support.
     /// </summary>
-    public ChatMessage CreateMultimodalMessage(string userMessage, List<AIContent> attachments)
+    public static ChatMessage CreateMultimodalMessage(string userMessage, List<AIContent> attachments)
     {
         var contents = new List<AIContent>();
         
@@ -31,15 +23,13 @@ public class MultimodalMessageHelper
         // Add all attachments (both text and images)
         contents.AddRange(attachments);
         
-        _logger.LogDebug("Created multimodal message with {Count} content items", contents.Count);
-        
         return new ChatMessage(ChatRole.User, contents);
     }
 
     /// <summary>
     /// Checks if any attachments contain images (DataContent).
     /// </summary>
-    public bool HasImageAttachments(List<AIContent> attachments)
+    public static bool HasImageAttachments(this IEnumerable<AIContent> attachments)
     {
         return attachments.OfType<DataContent>().Any();
     }

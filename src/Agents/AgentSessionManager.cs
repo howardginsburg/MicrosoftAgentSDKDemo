@@ -19,7 +19,6 @@ public class AgentSessionManager
     private readonly CosmosDbAgentThreadStore _threadStore;
     private readonly IAgentFactory _agentFactory;
     private readonly IFileAttachmentService _fileAttachmentService;
-    private readonly MultimodalMessageHelper _multimodalHelper;
     private readonly Microsoft.Agents.Storage.IStorage _storage;
     private readonly ILoggerFactory _loggerFactory;
 
@@ -29,7 +28,6 @@ public class AgentSessionManager
         CosmosDbAgentThreadStore threadStore,
         IAgentFactory agentFactory,
         IFileAttachmentService fileAttachmentService,
-        MultimodalMessageHelper multimodalHelper,
         Microsoft.Agents.Storage.IStorage storage,
         ILoggerFactory loggerFactory)
     {
@@ -38,7 +36,6 @@ public class AgentSessionManager
         _threadStore = threadStore;
         _agentFactory = agentFactory;
         _fileAttachmentService = fileAttachmentService;
-        _multimodalHelper = multimodalHelper;
         _storage = storage;
         _loggerFactory = loggerFactory;
     }
@@ -169,9 +166,9 @@ public class AgentSessionManager
             if (attachmentContents.Any())
             {
                 // Create multimodal ChatMessage with images and text
-                var message = _multimodalHelper.CreateMultimodalMessage(selection.FirstMessage!, attachmentContents);
+                var message = MultimodalMessageExtensions.CreateMultimodalMessage(selection.FirstMessage!, attachmentContents);
                 
-                if (_multimodalHelper.HasImageAttachments(attachmentContents))
+                if (attachmentContents.HasImageAttachments())
                 {
                     _logger.LogInformation("First message includes image attachments - using vision model");
                 }

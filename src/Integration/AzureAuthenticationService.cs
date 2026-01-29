@@ -44,7 +44,7 @@ public class AzureAuthenticationService : IAzureAuthenticationService
             }
             
             // Display authentication status
-            DisplayAuthenticationStatus(userName, subscription);
+            DisplayAuthenticationStatus(userName, subscription, armClient);
             
             _logger.LogDebug("Azure CLI authenticated | User: {User} | Subscription: {Subscription}", 
                 userName ?? "unknown", subscription?.Data.DisplayName ?? "unknown");
@@ -130,7 +130,7 @@ public class AzureAuthenticationService : IAzureAuthenticationService
         }
     }
 
-    private void DisplayAuthenticationStatus(string? userName, Azure.ResourceManager.Resources.SubscriptionResource? subscription)
+    private void DisplayAuthenticationStatus(string? userName, Azure.ResourceManager.Resources.SubscriptionResource? subscription, ArmClient armClient)
     {
         if (!string.IsNullOrEmpty(userName))
         {
@@ -145,9 +145,7 @@ public class AzureAuthenticationService : IAzureAuthenticationService
         {
             AnsiConsole.MarkupLine($"[dim]  Subscription: [cyan]{subscription.Data.DisplayName}[/][/]");
             
-            // Get tenant info if available
-            var credential = new AzureCliCredential();
-            var armClient = new ArmClient(credential);
+            // Get tenant info using the existing ArmClient
             var tenants = armClient.GetTenants();
             
             Azure.ResourceManager.Resources.TenantResource? tenant = null;

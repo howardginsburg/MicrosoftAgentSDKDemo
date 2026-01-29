@@ -79,7 +79,7 @@ public class ReasoningChatClient : DelegatingChatClient
         if (response.Messages == null || !response.Messages.Any())
             return;
 
-        var toolCalls = new List<AIContent>();
+        var toolInfos = new List<(string Name, string Arguments)>();
         foreach (var message in response.Messages)
         {
             if (message.Contents != null)
@@ -88,51 +88,15 @@ public class ReasoningChatClient : DelegatingChatClient
                 {
                     if (content is FunctionCallContent functionCall)
                     {
-                        toolCalls.Add(content);
+                        var name = functionCall.Name ?? "Unknown";
+                        var args = FormatArguments(functionCall.Arguments);
+                        toolInfos.Add((name, args));
                     }
                 }
             }
         }
 
-        if (toolCalls.Any())
-        {
-            // Log before displaying to avoid console output during table rendering
-            foreach (var content in toolCalls)
-            {
-                if (content is FunctionCallContent functionCall)
-                {
-                    var toolName = functionCall.Name ?? "Unknown";
-                    var arguments = FormatArguments(functionCall.Arguments);
-                    _logger.LogDebug("Tool invoked: {ToolName} | Arguments: {Arguments}", toolName, arguments);
-                }
-            }
-
-            var table = new Table()
-                .Border(TableBorder.Rounded)
-                .BorderColor(Color.Yellow);
-
-            table.AddColumn(new TableColumn("[yellow]Tool Name[/]"));
-            table.AddColumn(new TableColumn("[yellow]Arguments[/]"));
-
-            foreach (var content in toolCalls)
-            {
-                if (content is FunctionCallContent functionCall)
-                {
-                    var toolName = functionCall.Name ?? "Unknown";
-                    var arguments = FormatArguments(functionCall.Arguments);
-
-                    table.AddRow(
-                        $"[bold yellow]{toolName.EscapeMarkup()}[/]",
-                        $"[dim]{arguments.EscapeMarkup()}[/]"
-                    );
-                }
-            }
-
-            AnsiConsole.MarkupLine("[yellow]🔧 Tool Invocations:[/]");
-            AnsiConsole.Write(table);
-            AnsiConsole.WriteLine();
-        }
-        // Don't show "no tools needed" message - it's confusing when agent makes multiple calls
+        DisplayToolTable(toolInfos);
     }
 
     private void DisplayStreamingToolCalls(Dictionary<int, StreamingToolCallInfo> toolCalls)
@@ -140,11 +104,23 @@ public class ReasoningChatClient : DelegatingChatClient
         if (!toolCalls.Any())
             return;
 
+        var toolInfos = toolCalls
+            .OrderBy(kvp => kvp.Key)
+            .Select(kvp => (kvp.Value.Name, FormatArguments(kvp.Value.Arguments)))
+            .ToList();
+
+        DisplayToolTable(toolInfos);
+    }
+
+    private void DisplayToolTable(List<(string Name, string Arguments)> toolInfos)
+    {
+        if (!toolInfos.Any())
+            return;
+
         // Log before displaying to avoid console output during table rendering
-        foreach (var (index, toolInfo) in toolCalls.OrderBy(kvp => kvp.Key))
+        foreach (var (name, arguments) in toolInfos)
         {
-            var arguments = FormatArguments(toolInfo.Arguments);
-            _logger.LogDebug("Tool invoked: {ToolName} | Arguments: {Arguments}", toolInfo.Name, arguments);
+            _logger.LogDebug("Tool invoked: {ToolName} | Arguments: {Arguments}", name, arguments);
         }
 
         var table = new Table()
@@ -154,11 +130,10 @@ public class ReasoningChatClient : DelegatingChatClient
         table.AddColumn(new TableColumn("[yellow]Tool Name[/]"));
         table.AddColumn(new TableColumn("[yellow]Arguments[/]"));
 
-        foreach (var (index, toolInfo) in toolCalls.OrderBy(kvp => kvp.Key))
+        foreach (var (name, arguments) in toolInfos)
         {
-            var arguments = FormatArguments(toolInfo.Arguments);
             table.AddRow(
-                $"[bold yellow]{toolInfo.Name.EscapeMarkup()}[/]",
+                $"[bold yellow]{name.EscapeMarkup()}[/]",
                 $"[dim]{arguments.EscapeMarkup()}[/]"
             );
         }
