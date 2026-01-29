@@ -12,7 +12,7 @@ You are working on a console-based AI agent application built with the Microsoft
 - `Display/` - UI and console rendering (e.g., ConsoleUI.cs, ReasoningChatClient.cs)
 - `Storage/` - Data persistence implementations (e.g., CosmosDbAgentThreadStore.cs, CosmosDbChatMessageStore.cs)
 - `Integration/` - External service integrations (e.g., MCPServerManager.cs, ImageGenerationService.cs)
-- `Models/` - Data transfer objects and domain models (currently empty)
+- `Models/` - Data transfer objects and domain models (e.g., MCPServerConfiguration.cs)
 - `prompts/` - System instructions and prompt templates
 
 **ALWAYS** use the matching namespace for the folder (e.g., `MicrosoftAgentSDKDemo.Agents` for files in `Agents/`).
@@ -135,16 +135,19 @@ Key methods:
 ### Working with Integration/ Folder
 
 **MCPServerManager.cs** - Model Context Protocol integration:
-- Connects to Microsoft Learn MCP endpoint: `https://learn.microsoft.com/api/mcp`
-- Uses `SseClientTransport` for server-sent events communication
-- Returns 3 tools: `microsoft_docs_search`, `microsoft_code_sample_search`, `microsoft_docs_fetch`
+- Supports two transport types: SSE (HTTP) and Stdio (local process)
+- **SSE Transport**: Connects to HTTP endpoints like `https://learn.microsoft.com/api/mcp`
+- **Stdio Transport**: Launches local processes like `npx -y @azure/mcp@latest server start`
+- Uses `SseClientTransport` for SSE servers and `StdioClientTransport` for Stdio servers
+- Returns tools from all configured and enabled MCP servers
 - Tools are automatically passed to agent via ChatOptions
 
 When adding new MCP servers:
-1. Create transport for the server endpoint
-2. Use `McpClientFactory.CreateAsync()` to establish connection
-3. Call `ListToolsAsync()` to retrieve available tools
-4. Add tools to ChatOptions.Tools collection
+1. Add configuration to `appsettings.json` under `MCPServers.Servers`
+2. Set `TransportType` to `Sse` or `Stdio`
+3. For SSE: Set `Endpoint` to the server URL
+4. For Stdio: Set `Command`, `Arguments`, and optionally `EnvironmentVariables` and `WorkingDirectory`
+5. Tools automatically integrate via ChatOptions.Tools - no code changes needed
 
 **ImageGenerationService.cs** - DALL-E 3 integration:
 - Saves generated images to `images/` folder with timestamp filenames
@@ -279,9 +282,25 @@ When user reports storage problems:
 
 ### Adding New MCP Tools
 When user wants new tool integrations:
-1. Update MCPServerManager in Integration/ folder to connect to new MCP server endpoint
-2. Tools automatically integrate via ChatOptions.Tools - no other code changes needed
-3. ReasoningChatClient will automatically display new tool invocations in table
+1. Add server configuration to `appsettings.json` under `MCPServers.Servers`
+2. For SSE servers: Set `TransportType: "Sse"` and `Endpoint` URL
+3. For Stdio servers: Set `TransportType: "Stdio"`, `Command`, and `Arguments`
+4. Tools automatically integrate via ChatOptions.Tools - no code changes needed
+5. ReasoningChatClient will automatically display new tool invocations in table
+
+Example Stdio configuration for Azure MCP:
+```json
+{
+  "Name": "Azure MCP",
+  "TransportType": "Stdio",
+  "Command": "npx",
+  "Arguments": ["-y", "@azure/mcp@latest", "server", "start"],
+  "Enabled": true,
+  "TimeoutSeconds": 60,
+  "EnvironmentVariables": {},
+  "WorkingDirectory": null
+}
+```
 
 ### Customizing UI Display
 When user wants to change how information is displayed:

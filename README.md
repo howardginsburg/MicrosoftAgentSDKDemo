@@ -16,7 +16,7 @@ A console-based AI agent application built with the Microsoft Agent Framework, f
 - 📜 **Conversation History** - Full chat history displayed when loading threads
 - 💿 **Local Image Storage** - Generated images saved locally with automatic viewer launch
 - 🔧 **Tool Invocation Display** - See agent reasoning and MCP tool usage in real-time
-- ⚙️ **Configurable MCP Servers** - Support for multiple MCP servers via configuration
+- ⚙️ **Configurable MCP Servers** - Support for multiple MCP servers via configuration (SSE and Stdio transports)
 
 ## Prerequisites
 
@@ -219,9 +219,18 @@ Key settings in `appsettings.json`:
     "Servers": [
       {
         "Name": "Microsoft Learn",
+        "TransportType": "Sse",
         "Endpoint": "https://learn.microsoft.com/api/mcp",
         "Enabled": true,
         "TimeoutSeconds": 30
+      },
+      {
+        "Name": "Azure MCP",
+        "TransportType": "Stdio",
+        "Command": "npx",
+        "Arguments": ["-y", "@azure/mcp@latest", "server", "start"],
+        "Enabled": false,
+        "TimeoutSeconds": 60
       }
     ]
   }

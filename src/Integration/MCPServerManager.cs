@@ -11,6 +11,7 @@ namespace MicrosoftAgentSDKDemo.Integration;
 /// Manages MCP client connections and provides tools from MCP servers.
 /// Uses the official Model Context Protocol C# SDK.
 /// Supports multiple MCP servers configured via appsettings.json.
+/// Supports both SSE (HTTP) and Stdio (local process) transports.
 /// </summary>
 public interface IMCPServerManager
 {
@@ -58,44 +59,20 @@ public class MCPServerManager : IMCPServerManager
                 continue;
             }
 
-            if (string.IsNullOrEmpty(serverConfig.Endpoint))
-            {
-                _logger.LogWarning("MCP server '{ServerName}' has no endpoint configured - skipping", serverConfig.Name);
-                continue;
-            }
-
             try
             {
-                _logger.LogDebug("Connecting to MCP server '{ServerName}' at {Endpoint}", 
-                    serverConfig.Name, serverConfig.Endpoint);
-
-                // Create MCP client for this server
-                var transport = new SseClientTransport(new SseClientTransportOptions
+                var tools = serverConfig.TransportType switch
                 {
-                    Endpoint = new Uri(serverConfig.Endpoint),
-                    Name = serverConfig.Name
-                });
+                    MCPTransportType.Sse => await ConnectSseServerAsync(serverConfig),
+                    MCPTransportType.Stdio => await ConnectStdioServerAsync(serverConfig),
+                    _ => throw new InvalidOperationException($"Unknown transport type: {serverConfig.TransportType}")
+                };
 
-                var mcpClient = await McpClientFactory.CreateAsync(transport);
-                _mcpClients.Add(mcpClient);
-
-                _logger.LogInformation("✓ Connected to MCP server: {ServerName}", serverConfig.Name);
-
-                // Retrieve the list of tools from this MCP server
-                var mcpTools = await mcpClient.ListToolsAsync();
-                
-                _logger.LogDebug("Retrieved {ToolCount} tool(s) from '{ServerName}': {ToolNames}", 
-                    mcpTools.Count(), 
-                    serverConfig.Name,
-                    string.Join(", ", mcpTools.Select(t => t.Name)));
-
-                // Add tools from this server to the complete list
-                allTools.AddRange(mcpTools);
+                allTools.AddRange(tools);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to connect to MCP server '{ServerName}' at {Endpoint}", 
-                    serverConfig.Name, serverConfig.Endpoint);
+                _logger.LogError(ex, "Failed to connect to MCP server '{ServerName}'", serverConfig.Name);
                 // Continue to next server instead of failing completely
             }
         }
@@ -111,6 +88,97 @@ public class MCPServerManager : IMCPServerManager
         }
 
         return allTools;
+    }
+
+    /// <summary>
+    /// Connects to an SSE-based MCP server over HTTP.
+    /// </summary>
+    private async Task<IEnumerable<AITool>> ConnectSseServerAsync(MCPServerConfig serverConfig)
+    {
+        if (string.IsNullOrEmpty(serverConfig.Endpoint))
+        {
+            _logger.LogWarning("MCP server '{ServerName}' has no endpoint configured - skipping", serverConfig.Name);
+            return Enumerable.Empty<AITool>();
+        }
+
+        _logger.LogDebug("Connecting to SSE MCP server '{ServerName}' at {Endpoint}", 
+            serverConfig.Name, serverConfig.Endpoint);
+
+        var transport = new SseClientTransport(new SseClientTransportOptions
+        {
+            Endpoint = new Uri(serverConfig.Endpoint),
+            Name = serverConfig.Name
+        });
+
+        var mcpClient = await McpClientFactory.CreateAsync(transport);
+        _mcpClients.Add(mcpClient);
+
+        _logger.LogInformation("✓ Connected to SSE MCP server: {ServerName}", serverConfig.Name);
+
+        return await GetToolsFromClientAsync(mcpClient, serverConfig.Name);
+    }
+
+    /// <summary>
+    /// Connects to a Stdio-based MCP server by launching a local process.
+    /// </summary>
+    private async Task<IEnumerable<AITool>> ConnectStdioServerAsync(MCPServerConfig serverConfig)
+    {
+        if (string.IsNullOrEmpty(serverConfig.Command))
+        {
+            _logger.LogWarning("MCP server '{ServerName}' has no command configured - skipping", serverConfig.Name);
+            return Enumerable.Empty<AITool>();
+        }
+
+        _logger.LogDebug("Starting Stdio MCP server '{ServerName}' with command: {Command} {Arguments}", 
+            serverConfig.Name, 
+            serverConfig.Command,
+            string.Join(" ", serverConfig.Arguments));
+
+        var transportOptions = new StdioClientTransportOptions
+        {
+            Name = serverConfig.Name,
+            Command = serverConfig.Command,
+            Arguments = serverConfig.Arguments
+        };
+
+        // Add environment variables if configured
+        if (serverConfig.EnvironmentVariables.Count > 0)
+        {
+            transportOptions.EnvironmentVariables = serverConfig.EnvironmentVariables;
+            _logger.LogDebug("Setting {EnvCount} environment variable(s) for '{ServerName}'", 
+                serverConfig.EnvironmentVariables.Count, serverConfig.Name);
+        }
+
+        // Set working directory if configured
+        if (!string.IsNullOrEmpty(serverConfig.WorkingDirectory))
+        {
+            transportOptions.WorkingDirectory = serverConfig.WorkingDirectory;
+            _logger.LogDebug("Using working directory '{WorkingDirectory}' for '{ServerName}'", 
+                serverConfig.WorkingDirectory, serverConfig.Name);
+        }
+
+        var transport = new StdioClientTransport(transportOptions);
+        var mcpClient = await McpClientFactory.CreateAsync(transport);
+        _mcpClients.Add(mcpClient);
+
+        _logger.LogInformation("✓ Connected to Stdio MCP server: {ServerName}", serverConfig.Name);
+
+        return await GetToolsFromClientAsync(mcpClient, serverConfig.Name);
+    }
+
+    /// <summary>
+    /// Retrieves tools from a connected MCP client.
+    /// </summary>
+    private async Task<IEnumerable<AITool>> GetToolsFromClientAsync(IMcpClient mcpClient, string serverName)
+    {
+        var mcpTools = await mcpClient.ListToolsAsync();
+        
+        _logger.LogDebug("Retrieved {ToolCount} tool(s) from '{ServerName}': {ToolNames}", 
+            mcpTools.Count(), 
+            serverName,
+            string.Join(", ", mcpTools.Select(t => t.Name)));
+
+        return mcpTools;
     }
 
     public async Task DisposeAsync()

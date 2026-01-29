@@ -431,16 +431,30 @@ The agent displays its reasoning process:
 
 ## MCP Integration
 
-The application connects to configured MCP servers via `appsettings.json`:
+The application connects to configured MCP servers via `appsettings.json`. Two transport types are supported:
+
+- **SSE (Server-Sent Events)**: For HTTP-based MCP servers
+- **Stdio (Standard I/O)**: For local process-based MCP servers (e.g., npx commands)
 
 ```json
 "MCPServers": {
   "Servers": [
     {
       "Name": "Microsoft Learn",
+      "TransportType": "Sse",
       "Endpoint": "https://learn.microsoft.com/api/mcp",
       "Enabled": true,
       "TimeoutSeconds": 30
+    },
+    {
+      "Name": "Azure MCP",
+      "TransportType": "Stdio",
+      "Command": "npx",
+      "Arguments": ["-y", "@azure/mcp@latest", "server", "start"],
+      "Enabled": true,
+      "TimeoutSeconds": 60,
+      "EnvironmentVariables": {},
+      "WorkingDirectory": null
     }
   ]
 }
@@ -448,11 +462,20 @@ The application connects to configured MCP servers via `appsettings.json`:
 
 ### MCP Server Configuration
 
-Each MCP server has the following properties:
+**Common Properties** (all servers):
 - **Name**: Friendly name for logging and identification
-- **Endpoint**: The HTTPS endpoint URL for the MCP server
+- **TransportType**: `Sse` for HTTP servers, `Stdio` for local process servers
 - **Enabled**: Set to `false` to temporarily disable without removing configuration
 - **TimeoutSeconds**: Connection timeout (default: 30)
+
+**SSE Transport Properties**:
+- **Endpoint**: The HTTPS endpoint URL for the MCP server
+
+**Stdio Transport Properties**:
+- **Command**: The executable to run (e.g., `npx`, `node`, `python`)
+- **Arguments**: Array of command-line arguments
+- **EnvironmentVariables**: Dictionary of environment variables to set
+- **WorkingDirectory**: Optional working directory for the process
 
 ### Microsoft Learn MCP Server
 
@@ -463,24 +486,44 @@ The default configuration includes Microsoft Learn which provides:
 
 ### Adding Additional MCP Servers
 
-To add more MCP servers, simply add entries to the `Servers` array:
+To add more MCP servers, simply add entries to the `Servers` array.
 
+**Adding an SSE (HTTP) Server:**
 ```json
-"MCPServers": {
-  "Servers": [
-    {
-      "Name": "Microsoft Learn",
-      "Endpoint": "https://learn.microsoft.com/api/mcp",
-      "Enabled": true,
-      "TimeoutSeconds": 30
-    },
-    {
-      "Name": "Your Custom Server",
-      "Endpoint": "https://your-server.com/api/mcp",
-      "Enabled": true,
-      "TimeoutSeconds": 60
-    }
-  ]
+{
+  "Name": "Your Custom Server",
+  "TransportType": "Sse",
+  "Endpoint": "https://your-server.com/api/mcp",
+  "Enabled": true,
+  "TimeoutSeconds": 60
+}
+```
+
+**Adding a Stdio (Local Process) Server:**
+```json
+{
+  "Name": "Azure MCP",
+  "TransportType": "Stdio",
+  "Command": "npx",
+  "Arguments": ["-y", "@azure/mcp@latest", "server", "start"],
+  "Enabled": true,
+  "TimeoutSeconds": 60,
+  "EnvironmentVariables": {
+    "AZURE_SUBSCRIPTION_ID": "your-subscription-id"
+  },
+  "WorkingDirectory": null
+}
+```
+
+**Adding a Python-based MCP Server:**
+```json
+{
+  "Name": "Custom Python Server",
+  "TransportType": "Stdio",
+  "Command": "python",
+  "Arguments": ["-m", "your_mcp_server"],
+  "Enabled": true,
+  "TimeoutSeconds": 30
 }
 ```
 

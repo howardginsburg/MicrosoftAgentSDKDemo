@@ -37,9 +37,20 @@
     "Servers": [
       {
         "Name": "Microsoft Learn",
+        "TransportType": "Sse",
         "Endpoint": "https://learn.microsoft.com/api/mcp",
         "Enabled": true,
         "TimeoutSeconds": 30
+      },
+      {
+        "Name": "Azure MCP",
+        "TransportType": "Stdio",
+        "Command": "npx",
+        "Arguments": ["-y", "@azure/mcp@latest", "server", "start"],
+        "Enabled": false,
+        "TimeoutSeconds": 60,
+        "EnvironmentVariables": {},
+        "WorkingDirectory": null
       }
     ]
   }
