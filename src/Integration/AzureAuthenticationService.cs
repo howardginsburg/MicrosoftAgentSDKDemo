@@ -161,6 +161,7 @@ public class AzureAuthenticationService : IAzureAuthenticationService
             }
         }
         
+        AnsiConsole.MarkupLine("[dim]  Tip: Type [cyan]/help[/] during a conversation for available commands[/]");
         AnsiConsole.WriteLine();
     }
 

@@ -64,6 +64,7 @@ var host = Host.CreateDefaultBuilder(args)
         services.AddSingleton<IMCPServerManager, MCPServerManager>();
         services.AddSingleton<IImageGenerationService, AzureOpenAIImageService>();
         services.AddSingleton<IFileAttachmentService, FileAttachmentService>();
+        services.AddSingleton<IChatExportService, ChatExportService>();
         services.AddSingleton<IAgentFactory, ChatAgentFactory>();
         services.AddSingleton<IConsoleUI, ConsoleUI>();
         services.AddSingleton<IAzureAuthenticationService, AzureAuthenticationService>();

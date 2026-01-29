@@ -260,7 +260,7 @@ Document structure from storage:
 5. **Tool Location** - Adding tools to ChatClientAgentOptions instead of ChatOptions breaks tool integration
 6. **Case Sensitivity** - ThreadMetadata requires `PropertyNameCaseInsensitive = true` for deserialization
 7. **Logging Timing** - Logging with `LogInformation` during UI rendering corrupts Spectre.Console output (use LogDebug instead)
-8. **UI Terminology** - "Quit" at thread menu logs out; "quit" in chat returns to thread menu (lowercase vs uppercase)
+8. **UI Terminology** - "Quit" at thread menu logs out; `/quit` in chat returns to thread menu
 9. **Empty Messages** - Chat history display must skip empty messages and tool calls to avoid display issues
 10. **Wrong RunAsync Overload** - Using `RunAsync(string)` doesn't support images; use `RunAsync(ChatMessage)` with content array for multimodal support
 

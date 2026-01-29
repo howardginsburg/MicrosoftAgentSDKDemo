@@ -55,6 +55,7 @@
     
     <!-- Model Context Protocol SDK -->
     <PackageReference Include="ModelContextProtocol.Core" Version="0.2.0-preview.3" />
+    <PackageReference Include="QuestPDF" Version="2025.12.3" />
     <PackageReference Include="Spectre.Console" Version="0.54.0" />
     
     <!-- Serilog for file logging -->

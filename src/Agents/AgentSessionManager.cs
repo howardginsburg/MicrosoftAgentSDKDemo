@@ -10,6 +10,16 @@ using Spectre.Console;
 namespace MicrosoftAgentSDKDemo.Agents;
 
 /// <summary>
+/// Result of command processing.
+/// </summary>
+public enum CommandResult
+{
+    NotACommand,
+    Handled,
+    Quit
+}
+
+/// <summary>
 /// Manages agent sessions including thread creation, loading, and chat interactions.
 /// </summary>
 public class AgentSessionManager
@@ -19,6 +29,8 @@ public class AgentSessionManager
     private readonly CosmosDbAgentThreadStore _threadStore;
     private readonly IAgentFactory _agentFactory;
     private readonly IFileAttachmentService _fileAttachmentService;
+    private readonly IChatExportService _chatExportService;
+    private readonly IMCPServerManager _mcpServerManager;
     private readonly Microsoft.Agents.Storage.IStorage _storage;
     private readonly ILoggerFactory _loggerFactory;
 
@@ -28,6 +40,8 @@ public class AgentSessionManager
         CosmosDbAgentThreadStore threadStore,
         IAgentFactory agentFactory,
         IFileAttachmentService fileAttachmentService,
+        IChatExportService chatExportService,
+        IMCPServerManager mcpServerManager,
         Microsoft.Agents.Storage.IStorage storage,
         ILoggerFactory loggerFactory)
     {
@@ -36,6 +50,8 @@ public class AgentSessionManager
         _threadStore = threadStore;
         _agentFactory = agentFactory;
         _fileAttachmentService = fileAttachmentService;
+        _chatExportService = chatExportService;
+        _mcpServerManager = mcpServerManager;
         _storage = storage;
         _loggerFactory = loggerFactory;
     }
@@ -78,8 +94,48 @@ public class AgentSessionManager
                 AgentThread? thread = null;
                 string? threadId = null;
 
-                if (selection.Type == ThreadSelectionType.New && !string.IsNullOrWhiteSpace(selection.FirstMessage))
+                if (selection.Type == ThreadSelectionType.New)
                 {
+                    // Get first message, handling commands until we get actual content
+                    string? firstMessage = selection.FirstMessage;
+                    string? filePaths = selection.FilePaths;
+                    
+                    while (true)
+                    {
+                        if (string.IsNullOrWhiteSpace(firstMessage))
+                        {
+                            // Empty first message - go back to thread selection
+                            break;
+                        }
+                        
+                        // Check if first message is a command
+                        var commandResult = await HandleCommandIfApplicableAsync(firstMessage, username, null);
+                        if (commandResult == CommandResult.Quit)
+                        {
+                            firstMessage = null; // Signal to exit this flow
+                            break;
+                        }
+                        if (commandResult == CommandResult.Handled)
+                        {
+                            // Command was handled, ask for another first message
+                            var (newMessage, newFilePaths) = await _consoleUI.GetFirstMessageWithAttachmentsAsync();
+                            firstMessage = newMessage;
+                            filePaths = newFilePaths;
+                            continue;
+                        }
+                        
+                        // Not a command - proceed with conversation
+                        break;
+                    }
+                    
+                    if (string.IsNullOrWhiteSpace(firstMessage))
+                    {
+                        continue; // Go back to thread selection
+                    }
+                    
+                    // Update selection with potentially new first message
+                    selection = selection with { FirstMessage = firstMessage, FilePaths = filePaths };
+
                     // Create agent with tool routing based on the first message
                     var baseAgent = await AnsiConsole.Status()
                         .Spinner(Spinner.Known.Dots)
@@ -240,11 +296,12 @@ public class AgentSessionManager
             if (string.IsNullOrWhiteSpace(input))
                 continue;
 
-            if (input.Equals("quit", StringComparison.OrdinalIgnoreCase))
-            {
-                // Return to thread selection menu
+            // Handle commands
+            var commandResult = await HandleCommandIfApplicableAsync(input, username, threadId);
+            if (commandResult == CommandResult.Handled)
+                continue;
+            if (commandResult == CommandResult.Quit)
                 break;
-            }
 
             try
             {
@@ -285,5 +342,111 @@ public class AgentSessionManager
                 _consoleUI.DisplayError(ex.Message);
             }
         }
+    }
+
+    private async Task HandleExportAsync(string username, string threadId)
+    {
+        try
+        {
+            var chatHistoryKey = _threadStore.LastChatHistoryKey;
+            
+            if (string.IsNullOrEmpty(chatHistoryKey))
+            {
+                _consoleUI.DisplayError("No messages to export yet.");
+                return;
+            }
+
+            var messageStore = new CosmosDbChatMessageStore(
+                _storage, 
+                username,
+                System.Text.Json.JsonSerializer.SerializeToElement(chatHistoryKey),
+                _loggerFactory.CreateLogger<CosmosDbChatMessageStore>());
+            
+            var messages = await messageStore.GetMessagesAsync(chatHistoryKey);
+            
+            if (!messages.Any())
+            {
+                _consoleUI.DisplayError("No messages to export.");
+                return;
+            }
+
+            var filePath = await AnsiConsole.Status()
+                .Spinner(Spinner.Known.Dots)
+                .SpinnerStyle(Style.Parse("cyan"))
+                .StartAsync("📄 Exporting conversation to PDF...", async ctx =>
+                {
+                    return await _chatExportService.ExportToPdfAsync(messages, username, threadId);
+                });
+
+            _consoleUI.DisplayExportCompleted(filePath);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to export conversation");
+            _consoleUI.DisplayError($"Export failed: {ex.Message}");
+        }
+    }
+
+    private async Task HandleMcpCommandAsync()
+    {
+        try
+        {
+            var toolsByServer = await AnsiConsole.Status()
+                .Spinner(Spinner.Known.Dots)
+                .SpinnerStyle(Style.Parse("cyan"))
+                .StartAsync("🔌 Loading MCP servers...", async ctx =>
+                {
+                    return await _mcpServerManager.GetToolsByCategoryAsync();
+                });
+
+            _consoleUI.DisplayMcpServers(toolsByServer);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get MCP server info");
+            _consoleUI.DisplayError($"Failed to load MCP info: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Handles slash commands. Returns the result of command processing.
+    /// </summary>
+    private async Task<CommandResult> HandleCommandIfApplicableAsync(string input, string username, string? threadId)
+    {
+        if (string.IsNullOrWhiteSpace(input) || !input.StartsWith('/'))
+            return CommandResult.NotACommand;
+
+        if (input.Equals("/help", StringComparison.OrdinalIgnoreCase))
+        {
+            _consoleUI.DisplayAvailableCommands();
+            return CommandResult.Handled;
+        }
+
+        if (input.Equals("/mcp", StringComparison.OrdinalIgnoreCase))
+        {
+            await HandleMcpCommandAsync();
+            return CommandResult.Handled;
+        }
+
+        if (input.Equals("/quit", StringComparison.OrdinalIgnoreCase))
+        {
+            return CommandResult.Quit;
+        }
+
+        if (input.Equals("/export", StringComparison.OrdinalIgnoreCase))
+        {
+            if (string.IsNullOrEmpty(threadId))
+            {
+                _consoleUI.DisplayError("Cannot export - no active conversation.");
+            }
+            else
+            {
+                await HandleExportAsync(username, threadId);
+            }
+            return CommandResult.Handled;
+        }
+
+        // Unknown command - treat as not a command (will be sent to agent)
+        return CommandResult.NotACommand;
     }
 }

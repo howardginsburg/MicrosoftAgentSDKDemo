@@ -24,6 +24,9 @@ public interface IConsoleUI
     void DisplayError(string message);
     void DisplayGoodbye();
     void DisplayAttachmentsProcessed(int count);
+    void DisplayExportCompleted(string filePath);
+    void DisplayAvailableCommands();
+    void DisplayMcpServers(IDictionary<string, IList<Microsoft.Extensions.AI.AITool>> toolsByServer);
 }
 
 public record ThreadSelection(ThreadSelectionType Type, string? ThreadId = null, string? FirstMessage = null, string? FilePaths = null);
@@ -329,6 +332,83 @@ public class ConsoleUI : IConsoleUI
         if (count > 0)
         {
             AnsiConsole.MarkupLine($"[dim]📎 Attached {count} file(s)[/]");
+        }
+    }
+
+    public void DisplayExportCompleted(string filePath)
+    {
+        AnsiConsole.WriteLine();
+        
+        var panel = new Panel(new Markup($"[green]📄 Conversation Exported![/]\n[dim]{filePath.EscapeMarkup()}[/]"))
+        {
+            Border = BoxBorder.Rounded,
+            BorderStyle = new Style(Color.Green),
+            Padding = new Padding(2, 1)
+        };
+        
+        AnsiConsole.Write(panel);
+        
+        // Open in default PDF viewer
+        if (File.Exists(filePath))
+        {
+            try
+            {
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = filePath,
+                    UseShellExecute = true
+                });
+                AnsiConsole.MarkupLine("[dim]Opening PDF in default viewer...[/]");
+            }
+            catch
+            {
+                AnsiConsole.MarkupLine("[dim]Could not open PDF automatically. Please open the file manually.[/]");
+            }
+        }
+        
+        AnsiConsole.WriteLine();
+    }
+
+    public void DisplayAvailableCommands()
+    {
+        AnsiConsole.WriteLine();
+        AnsiConsole.MarkupLine("[cyan1]Available Commands:[/]");
+        AnsiConsole.MarkupLine("  [cyan]/help[/]   - Show this help");
+        AnsiConsole.MarkupLine("  [cyan]/mcp[/]    - List MCP servers and tools");
+        AnsiConsole.MarkupLine("  [cyan]/export[/] - Export conversation to PDF");
+        AnsiConsole.MarkupLine("  [cyan]/quit[/]   - Return to thread menu");
+        AnsiConsole.WriteLine();
+    }
+
+    public void DisplayMcpServers(IDictionary<string, IList<Microsoft.Extensions.AI.AITool>> toolsByServer)
+    {
+        AnsiConsole.WriteLine();
+        
+        if (!toolsByServer.Any())
+        {
+            AnsiConsole.MarkupLine("[yellow]No MCP servers connected.[/]");
+            AnsiConsole.WriteLine();
+            return;
+        }
+
+        var totalTools = toolsByServer.Values.Sum(t => t.Count);
+        AnsiConsole.MarkupLine($"[cyan1]MCP Servers ({toolsByServer.Count} servers, {totalTools} tools):[/]");
+        AnsiConsole.WriteLine();
+
+        foreach (var (serverName, tools) in toolsByServer)
+        {
+            var panel = new Panel(new Rows(
+                tools.Select(t => new Markup($"[dim]•[/] [yellow]{t.Name.EscapeMarkup()}[/]"))
+            ))
+            {
+                Header = new PanelHeader($"[bold green]🔌 {serverName.EscapeMarkup()}[/] [dim]({tools.Count} tools)[/]", Justify.Left),
+                Border = BoxBorder.Rounded,
+                BorderStyle = new Style(Color.Green),
+                Padding = new Padding(2, 0)
+            };
+            
+            AnsiConsole.Write(panel);
+            AnsiConsole.WriteLine();
         }
     }
 }
